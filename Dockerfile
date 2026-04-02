@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Add project root to PYTHONPATH for reliable imports
+ENV PYTHONPATH="/app:${PYTHONPATH}"
+
 # Install uv for high-speed dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -26,13 +29,13 @@ RUN uv pip install --system --no-cache -e .
 
 # Create the startup multi-process script
 RUN echo '#!/bin/bash\n\
+export PYTHONPATH="/app:${PYTHONPATH}"\n\
 echo "Starting TradeExecGym Backend (FastAPI)..."\n\
 # Run uvicorn in the background\n\
 uvicorn server.app:app --host 0.0.0.0 --port 7860 &\n\
 \n\
 echo "Starting TradeExecGym Dashboard (Gradio)..."\n\
 # Run Gradio on the port provided by HF Spaces (default 7860)\n\
-# We use 7860 for the UI as it is the primary entry point for users\n\
 python ui/app.py --port ${PORT:-7860}\n\
 ' > start.sh && chmod +x start.sh
 
