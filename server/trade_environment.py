@@ -21,9 +21,17 @@ from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.types import Action, Observation, State
 
 # Phase 2 components
-from env.price_model import PriceModel
-from env.venue_router import VenueRouter
-from env.reward import compute_reward
+try:
+    from env.price_model import PriceModel
+    from env.venue_router import VenueRouter
+    from env.reward import compute_reward
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from env.price_model import PriceModel
+    from env.venue_router import VenueRouter
+    from env.reward import compute_reward
 
 logger = logging.getLogger(__name__)
 
