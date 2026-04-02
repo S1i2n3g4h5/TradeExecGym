@@ -11,6 +11,13 @@ Usage:
     # HF Spaces (Docker)
     uvicorn server.app:app --host 0.0.0.0 --port 7860
 """
+import os
+import sys
+
+# Aggressive Path Resolution for Docker/OpenEnv
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
