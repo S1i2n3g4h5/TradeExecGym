@@ -9,6 +9,7 @@ import sys
 import time
 import json
 import asyncio
+import argparse
 import gradio as gr
 import pandas as pd
 import numpy as np
@@ -575,5 +576,11 @@ def build_gui():
     return demo
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_index = False
+    parser.add_argument("--port", type=int, default=7860)
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    args, unknown = parser.parse_known_args()
+    
     app = build_gui()
-    app.launch(server_port=7861, server_name="0.0.0.0")
+    app.launch(server_port=args.port, server_name=args.host)
