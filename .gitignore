@@ -159,11 +159,11 @@ Thumbs.db
 # Project specific
 logs/
 .gemini/
-models/*.zip
+# models/*.zip  # Un-ignored for HF deployment
 models/*.weights
 training_data/
 
-# TradeExecGym specific
+# TradeExecGym spec--/ific
 /tmp/
 *.log
 *.png
