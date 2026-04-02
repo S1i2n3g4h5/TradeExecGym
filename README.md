@@ -1,3 +1,17 @@
+---
+title: TradeExecGym
+emoji: 🚀
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+tags:
+- openenv
+- reinforcement-learning
+- finance
+---
+
 # TradeExecGym: institutional Smart Order Router (SOR)
 
 [![OpenEnv Compliant](https://img.shields.io/badge/OpenEnv-Compliant-emerald)](https://github.com/meta-pytorch/OpenEnv)
