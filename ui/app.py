@@ -61,18 +61,17 @@ class UIState:
         self.task_id = "task1_twap_beater"
 
     async def start_session(self, display_name):
-        # Close old client if it exists to allow re-running tasks cleanly
-        if self.client is not None:
-            try:
-                await self.client.close()
-            except Exception:
-                pass
-            self.client = None
-
-        self.client = TradeExecClient(base_url="http://localhost:7860")
+        if self.client is None:
+            self.client = TradeExecClient(base_url="http://localhost:7860")
         
         task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
-        obs = await self.client.reset(task_id=task_id)
+        try:
+            obs = await self.client.reset(task_id=task_id)
+        except Exception:
+            # Fallback if connection dropped
+            self.client = TradeExecClient(base_url="http://localhost:7860")
+            obs = await self.client.reset(task_id=task_id)
+
         self.task_id = task_id
         self.history = []
         self.current_obs = obs
@@ -107,10 +106,9 @@ class UIState:
         return result, self.create_plot()
 
     def _parse_result(self, text):
-        # Extract metrics safely from text string returned by the Env Backend
-        # We use a robust line-by-line parser with try-except to avoid UI crashes
+        # Use a consistent sequence ID if we are parsing for history
         metrics = {
-            "price": 150.0, 
+            "price": 0.0, 
             "pct_done": 0.0, 
             "is_bps": 0.0, 
             "score": 0.0, 
@@ -121,25 +119,39 @@ class UIState:
         if not text or not isinstance(text, str):
             return metrics
 
+        # Fallback to last known price to avoid chart jumping to zero
+        if self.history:
+            metrics["price"] = self.history[-1]["price"]
+
         try:
-            for line in text.split("\n"):
-                clean_line = line.strip()
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            for line in lines:
                 try:
-                    if "Mid Price:" in clean_line and "$" in clean_line:
-                        price_str = clean_line.split("$")[1].split(" ")[0].strip().replace(",", "")
-                        metrics["price"] = float(price_str)
-                    elif "Executed:" in clean_line and "(" in clean_line:
-                        metrics["pct_done"] = float(clean_line.split("(")[1].split("%")[0].strip())
-                    elif "Your IS:" in clean_line:
-                        metrics["is_bps"] = float(clean_line.split(":")[1].lower().replace("bps", "").strip())
-                    elif "Grader Score:" in clean_line:
-                        metrics["score"] = float(clean_line.split(":")[1].split("/")[0].strip())
-                    elif "Time left:" in clean_line:
-                        metrics["steps_left"] = int(clean_line.split(":")[1].split("steps")[0].strip())
+                    # More robust substring matching
+                    if "Mid Price:" in line:
+                        parts = line.split("$")
+                        if len(parts) > 1:
+                            val = parts[1].split()[0].replace(",", "").strip()
+                            metrics["price"] = float(val)
+                    elif "Executed:" in line and "%" in line:
+                        val = line.split("(")[1].split("%")[0].strip()
+                        metrics["pct_done"] = float(val)
+                    elif "Your IS:" in line:
+                        val = line.split(":")[1].lower().replace("bps", "").strip()
+                        metrics["is_bps"] = float(val)
+                    elif "Final IS:" in line:
+                        val = line.split(":")[1].lower().replace("bps", "").strip()
+                        metrics["is_bps"] = float(val)
+                    elif "Grader Score:" in line:
+                        val = line.split(":")[1].split("/")[0].strip()
+                        metrics["score"] = float(val)
+                    elif "Time left:" in line:
+                        val = line.split(":")[1].split("steps")[0].strip()
+                        metrics["steps_left"] = int(val)
                 except (ValueError, IndexError):
-                    continue # Skip malformed lines
+                    continue 
         except Exception:
-            pass # Last resort safety
+            pass 
             
         return metrics
 
@@ -199,72 +211,68 @@ async def run_auto_simulation(display_name, mode):
     """Run an automated episode based on selected mode."""
     client = TradeExecClient(base_url="http://localhost:7860")
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
-    obs = await client.reset(task_id=task_id)
-    state_parser = UIState()
-    history = []
     
-    max_steps = 200 # Fallback 
-    shares_remaining = 600000 
-    
-    # Dummy logic to loop until done
-    done = False
-    step = 0
-    while not done and step < max_steps:
-        # Decide action based on mode
-        rate = 0.05
-        use_dark = False
-        dark_frac = 0.0
-
-        if mode == "Volume-Weighted (VWAP)":
-            # Rough U-shaped volume proxy
-            p = step / max(1, 30)
-            vol_ratio = 1.6 if p < 0.20 else (0.5 if p < 0.8 else 1.8)
-            rate = 0.05 * vol_ratio
-            rate = min(0.25, max(0.01, rate))
-        
-        elif mode == "Trained Agent (GRPO)":
-            # Smart erratic behavior for adversary tests
-            rate = 0.12 if step % 2 == 0 else 0.02
-        
-        elif mode == "Time-Weighted (TWAP)":
-            rate = 0.05
-
-        result = await client.execute_trade(
-            participation_rate=rate, 
-            use_dark_pool=use_dark, 
-            dark_pool_fraction=dark_frac,
-            order_type="MARKET",
-            limit_offset_bps=0.0
-        )
-        metrics = state_parser._parse_result(result)
-        metrics["step"] = step
-        history.append(metrics)
-        
-        if "EPISODE COMPLETE" in result:
-            done = True
-            
-        step += 1
-        # Optional: yield partial updates if we wanted live plotting. For now, block till end.
-    
-    # Formatting the summary outcome
-    final_is = history[-1].get("is_bps", 0) if history else 0
-    final_score = history[-1].get("score", 0) if history else 0
-    
-    summary_text = (
-        f"### Simulation Complete: {mode} on {task_id}\n\n"
-        f"**Rounds Survived:** {step}\n"
-        f"**Final Implementation Shortfall:** {final_is:.2f} bps\n"
-        f"**Final Grader Score:** {final_score:.4f}/1.0\n\n"
-        f"*Lower IS (Slippage) is better. Grader score compares this strategy against optimum.*"
-    )
-    
-    # Close client explicitly after auto-sim to release the socket
     try:
-        await client.close()
-    except Exception:
-        pass
+        await client.reset(task_id=task_id)
+        state_parser = UIState()
+        history = []
+        
+        # Determine max steps based on task
+        max_steps = 30
+        if "VWAP" in display_name: max_steps = 60
+        elif "Volatile" in display_name: max_steps = 90
+        elif "Adversarial" in display_name: max_steps = 120
+        elif "Deadline" in display_name: max_steps = 80
+        
+        done = False
+        step = 0
+        while not done and step < max_steps:
+            rate = 0.05
+            use_dark = False
+            dark_frac = 0.0
 
-    return summary_text, plot_trajectory(history, f"Auto-Simulate: {mode}")
+            if mode == "Volume-Weighted (VWAP)":
+                p = step / max(1, max_steps)
+                vol_ratio = 1.6 if p < 0.20 else (0.5 if p < 0.8 else 1.8)
+                rate = 0.05 * vol_ratio
+                rate = min(0.25, max(0.01, rate))
+            elif mode == "Trained Agent (GRPO)":
+                rate = 0.12 if step % 2 == 0 else 0.02
+                if "Volatile" in display_name:
+                    use_dark = True
+                    dark_frac = 0.4
+
+            result = await client.execute_trade(
+                participation_rate=rate, 
+                use_dark_pool=use_dark, 
+                dark_pool_fraction=dark_frac
+            )
+            
+            # Reuse logic
+            metrics = state_parser._parse_result(result)
+            metrics["step"] = step
+            history.append(metrics)
+            
+            if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
+                done = True
+            step += 1
+        
+        final_is = history[-1].get("is_bps", 0) if history else 0
+        final_score = history[-1].get("score", 0) if history else 0
+        
+        summary_text = (
+            f"### Simulation Complete: {mode} on {task_id}\n\n"
+            f"**Steps Taken:** {step}\n"
+            f"**Final IS:** {final_is:.2f} bps\n"
+            f"**Grader Score:** {final_score:.4f}/1.0\n"
+        )
+        await client.close()
+        return summary_text, plot_trajectory(history, f"Auto: {mode}")
+        
+    except Exception as e:
+        try: await client.close()
+        except: pass
+        return f"### simulation Failed\n\nError: {str(e)}", None
 
 # ---------------------------------------------------------------------------
 # Gradio Interface

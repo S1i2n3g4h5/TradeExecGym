@@ -311,124 +311,144 @@ class TradeExecEnvironment(MCPEnvironment):
         if self._episode_done:
             return "❌ Episode already complete. Call reset() to start a new episode."
 
-        steps_left = max(0, self._max_steps - self._step_count)
-        if steps_left <= 0:
-            self._episode_done = True
-            return "⏰ Time limit reached. Episode complete. Call reset() for a new episode."
+        try:
+            steps_left = max(0, self._max_steps - self._step_count)
+            if steps_left <= 0:
+                self._episode_done = True
+                return "⏰ Time limit reached. Episode complete. Call reset() for a new episode."
 
-        # Clamp participation rate
-        participation_rate = max(0.0, min(0.25, participation_rate))
-        self._step_count += 1
+            # Clamp participation rate
+            participation_rate = max(0.0, min(0.25, float(participation_rate)))
+            self._step_count += 1
 
-        # Determine target shares (same logic as Phase 1)
-        adv_per_step = ADV_SHARES / 780
-        target_shares = int(participation_rate * adv_per_step * self._volume_ratio())
-        shares_to_fill = min(target_shares, self._shares_remaining)
+            # Determine target shares
+            adv_per_step = ADV_SHARES / 780
+            target_shares = int(participation_rate * adv_per_step * self._volume_ratio())
+            shares_to_fill = min(target_shares, self._shares_remaining)
 
-        # --- Task Hook (Adversary) ---
-        adv_penalty_bps = self.active_task.on_trade_step(
-            step_count=self._step_count,
-            participation_rate=participation_rate,
-            current_price=self._mid_price,
-            shares_executed=self._shares_executed,
-            shares_remaining=self._shares_remaining,
-        )
-
-        # --- Price model step ---
-        old_price = self._mid_price
-        market_state = self.price_model.step(participation_rate)
-        
-        # Apply adversarial price slippage
-        if adv_penalty_bps > 0:
-            market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
-
-        self._mid_price = market_state.price
-        slippage_bps = (self._mid_price / old_price - 1.0) * 10_000
-
-        # --- Venue routing ---
-        dark_filled, lit_filled, dark_price, lit_price, _ = self.venue_router.route_order(
-            use_dark_pool=use_dark_pool,
-            dark_pool_fraction=dark_pool_fraction,
-            shares_to_fill=shares_to_fill,
-            current_price=self._mid_price,
-        )
-        # Dark fills (zero impact)
-        if dark_filled > 0:
-            self._total_cost += dark_filled * dark_price
-            self._shares_executed += dark_filled
-            self._shares_remaining -= dark_filled
-        # Lit fills (use price after impact)
-        if lit_filled > 0:
-            self._total_cost += lit_filled * lit_price
-            self._shares_executed += lit_filled
-            self._shares_remaining -= lit_filled
-
-        total_filled = dark_filled + lit_filled
-        self._baseline_step += 1
-
-        # Episode completion check
-        steps_after = max(0, self._max_steps - self._step_count)
-        is_done = (self._shares_remaining <= 0) or (steps_after <= 0)
-        if is_done:
-            self._episode_done = True
-
-        # Metrics
-        current_is = self._compute_current_is()
-        twap_is = self._twap_is_at_step()
-        vwap_is = self._vwap_is_at_step()
-        # Simple risk proxy
-        risk_penalty = self._mid_price * self._volume_ratio() * (self._step_count / self._max_steps)
-        # Compute per‑step reward
-        self._last_reward = compute_reward(self.state, current_is, risk_penalty, slippage_bps)
-
-        # Formatting response
-        dark_line = ""
-        if dark_filled > 0:
-            dark_line = f"\n  Dark Pool: {dark_filled:,} shares @ ${dark_price:.4f} (zero impact ✅)"
-
-        completion_block = ""
-        if is_done:
-            grader = self._compute_grader_score()
-            pct = self._shares_executed / self._total_shares * 100
-            completion_block = (
-                f"\n\n{'═'*52}\n"
-                f"🏁 EPISODE COMPLETE\n"
-                f"  Shares filled:  {self._shares_executed:,} / {self._total_shares:,} ({pct:.1f}%)\n"
-                f"  Final IS:       {current_is:.2f} bps\n"
-                f"  Grader Score:   {grader:.4f} / 1.0000\n"
-                f"  vs TWAP ({twap_is:.1f} bps): {'BEAT ✅' if current_is < twap_is else 'MISSED ❌'}\n"
-                f"  vs VWAP ({vwap_is:.1f} bps): {'BEAT ✅' if current_is < vwap_is else 'MISSED ❌'}\n"
-                f"{'═'*52}\n"
+            # --- Task Hook (Adversary) ---
+            adv_penalty_bps = self.active_task.on_trade_step(
+                step_count=self._step_count,
+                participation_rate=participation_rate,
+                current_price=self._mid_price,
+                shares_executed=self._shares_executed,
+                shares_remaining=self._shares_remaining,
             )
 
-        narrative = self.active_task.get_market_narrative(
-            step_count=self._step_count,
-            shares_remaining=self._shares_remaining,
-            current_is=current_is,
-            is_high_volatility=(self.active_task.sigma > 0.04)
-        )
+            # --- Price model step ---
+            old_price = self._mid_price
+            market_state = self.price_model.step(participation_rate)
+            
+            # Apply adversarial price slippage
+            if adv_penalty_bps > 0:
+                market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
 
-        return (
-            f"TRADE EXECUTED — Step {self._step_count}/{self._max_steps}\n"
-            f"{'─'*52}\n"
-            f"NARRATIVE: {narrative}\n"
-            f"\nORDER: rate={participation_rate:.3f} | {order_type} | "
-            f"{'dark+lit' if dark_filled > 0 else 'lit only'}\n"
-            f"\nFILLS\n"
-            f"  NASDAQ Lit: {lit_filled:,} @ ${self._mid_price:.4f}  (slippage {slippage_bps:.2f} bps)"
-            f"{dark_line}\n"
-            f"  Mid Price:  ${self._mid_price:.4f}\n"
-            f"  Total:      {total_filled:,} shares\n"
-            f"\nINVENTORY\n"
-            f"  Executed:  {self._shares_executed:,} / {self._total_shares:,} ({self._shares_executed/self._total_shares*100:.1f}%)\n"
-            f"  Remaining: {self._shares_remaining:,} shares\n"
-            f"  Time left: {steps_after} steps\n"
-            f"\nPERFORMANCE\n"
-            f"  Your IS:  {current_is:.2f} bps\n"
-            f"  TWAP IS:  {twap_is:.2f} bps\n"
-            f"  VWAP IS:  {vwap_is:.2f} bps"
-            f"{completion_block}"
-        )
+            self._mid_price = market_state.price
+            slippage_bps = (self._mid_price / old_price - 1.0) * 10_000
+
+            # --- Venue routing (with Toxic Flow detection) ---
+            dark_filled, lit_filled, dark_price, lit_price, toxic_slippage = self.venue_router.route_order(
+                use_dark_pool=use_dark_pool,
+                dark_pool_fraction=dark_pool_fraction,
+                shares_to_fill=shares_to_fill,
+                current_price=self._mid_price,
+                volatility=self.price_model.sigma
+            )
+            
+            # Apply Toxic Flow penalty if detected
+            if toxic_slippage > 0:
+                lit_price *= (1.0 + toxic_slippage / 10_000.0)
+                slippage_bps += toxic_slippage
+
+            # Fills
+            if dark_filled > 0:
+                self._total_cost += dark_filled * dark_price
+                self._shares_executed += dark_filled
+                self._shares_remaining -= dark_filled
+            if lit_filled > 0:
+                self._total_cost += lit_filled * lit_price
+                self._shares_executed += lit_filled
+                self._shares_remaining -= lit_filled
+
+            total_filled = dark_filled + lit_filled
+            self._baseline_step += 1
+
+            # Episode completion check
+            steps_after = max(0, self._max_steps - self._step_count)
+            is_done = (self._shares_remaining <= 0) or (steps_after <= 0)
+            if is_done:
+                self._episode_done = True
+
+            # Metrics
+            current_is = self._compute_current_is()
+            twap_is = self._twap_is_at_step()
+            vwap_is = self._vwap_is_at_step()
+            risk_penalty = self._mid_price * self._volume_ratio() * (self._step_count / self._max_steps)
+            
+            # Compute reward safely
+            self._last_reward = compute_reward(self.state, current_is, risk_penalty, slippage_bps)
+
+            # Narrative
+            narrative = self.active_task.get_market_narrative(
+                step_count=self._step_count,
+                shares_remaining=self._shares_remaining,
+                current_is=current_is,
+                is_high_volatility=(self.active_task.sigma > 0.04)
+            )
+
+            # Formatting response
+            dark_line = f"\n  Dark Pool: {dark_filled:,} shares @ ${dark_price:.4f} (zero impact ✅)" if dark_filled > 0 else ""
+            toxic_line = f"\n  Toxic Flow: ⚠️ Penalty {toxic_slippage:.1f} bps (Info Leakage!)" if toxic_slippage > 0 else ""
+
+            completion_block = ""
+            if is_done:
+                grader = self._compute_grader_score()
+                pct = self._shares_executed / self._total_shares * 100
+                completion_block = (
+                    f"\n\n{'═'*52}\n"
+                    f"🏁 EPISODE COMPLETE\n"
+                    f"  Shares filled:  {self._shares_executed:,} / {self._total_shares:,} ({pct:.1f}%)\n"
+                    f"  Final IS:       {current_is:.2f} bps\n"
+                    f"  Grader Score:   {grader:.4f} / 1.0000\n"
+                    f"  vs TWAP ({twap_is:.1f} bps): {'BEAT ✅' if current_is < twap_is else 'MISSED ❌'}\n"
+                    f"  vs VWAP ({vwap_is:.1f} bps): {'BEAT ✅' if current_is < vwap_is else 'MISSED ❌'}\n"
+                    f"{'═'*52}\n"
+                )
+
+            return (
+                f"TRADE EXECUTED — Step {self._step_count}/{self._max_steps}\n"
+                f"{'─'*52}\n"
+                f"NARRATIVE: {narrative}\n"
+                f"\nORDER: rate={participation_rate:.3f} | {order_type} | "
+                f"{'dark+lit' if dark_filled > 0 else 'lit only'}\n"
+                f"\nFILLS\n"
+                f"  NASDAQ Lit: {lit_filled:,} @ ${self._mid_price:.4f}  (slippage {slippage_bps - toxic_slippage:.2f} bps)"
+                f"{dark_line}"
+                f"{toxic_line}\n"
+                f"  Mid Price:  ${self._mid_price:.4f}\n"
+                f"  Total:      {total_filled:,} shares\n"
+                f"\nINVENTORY\n"
+                f"  Executed:  {self._shares_executed:,} / {self._total_shares:,} ({self._shares_executed/self._total_shares*100:.1f}%)\n"
+                f"  Remaining: {self._shares_remaining:,} shares\n"
+                f"  Time left: {steps_after} steps\n"
+                f"\nPERFORMANCE\n"
+                f"  Your IS:  {current_is:.2f} bps\n"
+                f"  TWAP IS:  {twap_is:.2f} bps\n"
+                f"  VWAP IS:  {vwap_is:.2f} bps"
+                f"{completion_block}"
+            )
+        except Exception as e:
+            import traceback
+            err_trace = traceback.format_exc()
+            logger.error("TRADE EXECUTION CRASH:\n%s", err_trace)
+            return (
+                f"⚠️ ENGINE ERROR — Step {self._step_count}\n"
+                f"{'─'*52}\n"
+                f"The simulation engine encountered a critical logic error:\n"
+                f"Error: {str(e)}\n\n"
+                f"This usually happens if a physics parameter overflows or a task metric "
+                f"calculation fails. The session is likely corrupted. Please reset."
+            )
 
     # ── Metric helpers ───────────────────────────────────────────────────────
 
