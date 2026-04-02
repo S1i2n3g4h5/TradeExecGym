@@ -39,6 +39,7 @@ class TradeExecEnvironment(MCPEnvironment):
     Trains agents to minimize Implementation Shortfall (IS) using an
     Almgren‑Chriss market‑impact model.
     """
+    SUPPORTS_CONCURRENT_SESSIONS = True
 
     def __init__(self) -> None:
         # Episode state (initialised here; properly set in reset())
