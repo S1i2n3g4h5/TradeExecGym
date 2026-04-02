@@ -79,3 +79,20 @@ docker run -p 7860:7860 trade-exec-gym
 | Task 3 | 42.1 | 0.79 |
 | Task 4 | 55.0 | 0.72 |
 | Task 5 | 88.0 | 0.65 |
+
+---
+
+## 🧠 Cognitive Architectures & Diversification
+
+While **GRPO (Group Relative Policy Optimization)** provides our robust baseline, TradeExecGym is designed to support a diversity of advanced agentic patterns to handle market chaos:
+
+### 1. Self-Correction & Reasoning (R1 Pattern)
+TradeExecGym rewards agents that use **Self-Correction**. Before an action is taken, the model leverages a hidden Chain-of-Thought to verify its math-suggested participation rate against the current volatility narrative. This "System 2" thinking prevents catastrophic slippage during flash crashes.
+
+### 2. Multi-Agent Diversification
+*   **The Heuristic Expert:** A deterministic SOR (Smart Order Router) grounded in Almgren-Chriss physics.
+*   **The Cognitive Overrider:** An LLM that detects "Adversarial HFT" (snipers) that the math-based agent might miss. 
+*   **The Auditor:** A second LLM pass that reviews the execution trajectory for information leakage (e.g., trading too predictably).
+
+### 3. Credit Assignment & Memory
+Standard RL often fails in SOR because rewards are sparse. We implement **Turn-Level Credit Assignment** where the LLM is explicitly asked to reflect on the difference between the *Expected Impact* and the *Actual Impact* of the previous step. This creates a "Memory-Driven Evolution" where the agent adapts its aggressiveness within a single trading day.
