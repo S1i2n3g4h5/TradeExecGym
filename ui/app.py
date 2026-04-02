@@ -85,25 +85,29 @@ class UIState:
         return meta.get("output", "Session started.")
 
     async def step(self, rate, use_dark, dark_frac):
-        if not self.is_running or not self.client:
-            return "No session active.", None
+        if not self.client:
+            return "No session active.", None, gr.update(), 0.0, 0.0
         
-        result = await self.client.execute_trade(
-            participation_rate=float(rate),
-            use_dark_pool=bool(use_dark),
-            dark_pool_fraction=float(dark_frac),
-            order_type="MARKET",
-            limit_offset_bps=0.0
-        )
-        
-        metrics = self._parse_result(result)
-        self.history.append(metrics)
-        self.current_obs = result # Keep track of last text
-        
-        if "EPISODE COMPLETE" in result:
-            self.is_running = False
+        try:
+            result = await self.client.execute_trade(
+                participation_rate=float(rate),
+                use_dark_pool=bool(use_dark),
+                dark_pool_fraction=float(dark_frac),
+            )
             
-        return result, self.create_plot()
+            metrics = self._parse_result(result)
+            self.history.append(metrics)
+            self.current_obs = result
+            
+            is_val = metrics.get("is_bps", 0.0)
+            score_val = metrics.get("score", 0.0)
+            
+            if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
+                self.is_running = False
+                
+            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val
+        except Exception as e:
+            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0
 
     def _parse_result(self, text):
         # Use a consistent sequence ID if we are parsing for history
@@ -319,13 +323,8 @@ def build_gui():
                         auto_plot = gr.Plot(label="Order Trajectory")
                         auto_summary = gr.Markdown(label="Post-Trade Analysis")
                 
-                # Wrapper to handle async execution in gradio correctly
-                def _run_auto_sync(task, mode):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    return loop.run_until_complete(run_auto_simulation(task, mode))
-                    
-                run_auto_btn.click(_run_auto_sync, inputs=[auto_task_dd, auto_mode_dd], outputs=[auto_summary, auto_plot])
+                # Native async click handlers
+                run_auto_btn.click(run_auto_simulation, inputs=[auto_task_dd, auto_mode_dd], outputs=[auto_summary, auto_plot])
 
             # ================= Tab 2: Manual Challenge Mode =================
             with gr.TabItem("Manual Challenge"):
@@ -352,29 +351,20 @@ def build_gui():
                         plot_output = gr.Plot(label="Market Canvas", container=True)
                         status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
 
-                # Async Wrappers for Gradio Events
-                def _on_reset_sync(task_id):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    summary = loop.run_until_complete(state.start_session(task_id))
+                # Async Event Handlers for Manual Mode
+                async def _on_reset(task_id):
+                    summary = await state.start_session(task_id)
                     return summary, None, gr.update(interactive=True)
 
-                def _on_step_sync(rate, use_dark, dark_frac):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    result, plot = loop.run_until_complete(state.step(rate, use_dark, dark_frac))
-                    interactive = state.is_running
-                    return result, plot, gr.update(interactive=interactive)
+                async def _on_step(rate, use_dark, dark_frac):
+                    return await state.step(rate, use_dark, dark_frac)
                     
-                reset_btn.click(_on_reset_sync, inputs=[task_select], outputs=[status_text, plot_output, step_btn])
+                reset_btn.click(_on_reset, inputs=[task_select], outputs=[status_text, plot_output, step_btn])
                 
                 step_btn.click(
-                    _on_step_sync, 
+                    _on_step, 
                     inputs=[rate_slider, dark_check, dark_frac], 
-                    outputs=[status_text, plot_output, step_btn]
-                ).then(
-                    lambda: (state.history[-1]["is_bps"] if state.history else 0.0, state.history[-1]["score"] if state.history else 0.0), 
-                    outputs=[is_box, score_box]
+                    outputs=[status_text, plot_output, step_btn, is_box, score_box]
                 )
 
             # ================= Tab 3: Project & Environment Info =================

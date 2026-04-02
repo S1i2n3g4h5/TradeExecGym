@@ -29,7 +29,8 @@ app = create_app(
     TradeExecEnvironment,
     CallToolAction,
     CallToolObservation,
-    env_name="trade_exec_gym"
+    env_name="trade_exec_gym",
+    max_concurrent_envs=5
 )
 
 def main():
