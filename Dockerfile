@@ -30,12 +30,12 @@ RUN uv pip install --system --no-cache -e .
 # Create the startup multi-process script
 RUN echo '#!/bin/bash\n\
 export PYTHONPATH="/app:${PYTHONPATH}"\n\
-echo "Starting TradeExecGym Backend (FastAPI)..."\n\
-# Run uvicorn in the background\n\
-uvicorn server.app:app --host 0.0.0.0 --port 7860 &\n\
+echo "Starting TradeExecGym Backend (FastAPI) on port 7865..."\n\
+# Run uvicorn on 7865 internally\n\
+uvicorn server.app:app --host 0.0.0.0 --port 7865 &\n\
 \n\
-echo "Starting TradeExecGym Dashboard (Gradio)..."\n\
-# Run Gradio on the port provided by HF Spaces (default 7860)\n\
+echo "Starting TradeExecGym Dashboard (Gradio) on primary port 7860..."\n\
+# HF Spaces expects the primary UI on the PORT provided (defaults to 7860)\n\
 python ui/app.py --port ${PORT:-7860}\n\
 ' > start.sh && chmod +x start.sh
 
