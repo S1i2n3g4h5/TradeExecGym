@@ -1,0 +1,23 @@
+# OpenEnv Server Manifest
+spec_version: 1
+environment:
+  name: "trade_exec_gym"
+  description: "Smart Order Router RL Environment. Execute block trades minimizing Implementation Shortfall."
+  version: "1.0.0"
+
+runtime: "fastapi"
+server_module: "server.app"
+server_app: "app"
+
+# Tiers of tasks evaluated over the course of the episode
+tasks:
+  - id: "task1_twap_beater"
+    description: "Execute 100K shares. Beat TWAP (equal slicing). Easy difficulty."
+  - id: "task2_vwap_optimizer"
+    description: "Execute 250K shares tracking market volume profiles. Medium."
+  - id: "task3_volatile_execution"
+    description: "Execute 400K shares under 3x volatility with dark pool access. Hard."
+  - id: "task4_adversarial"
+    description: "HFT adversary exploiting predictable passive patterns. Very Hard."
+  - id: "task5_deadline_pressure"
+    description: "1M shares, huge penalty for unexecuted shares. Extreme."
