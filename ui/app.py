@@ -65,13 +65,13 @@ class UIState:
 
     async def start_session(self, display_name, seed=42):
         if self.client is None:
-            self.client = TradeExecClient(base_url="http://localhost:7860")
+            self.client = TradeExecClient(base_url="http://localhost:7865")
         
         task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
         try:
             obs = await self.client.reset(task_id=task_id, seed=int(seed))
         except Exception:
-            self.client = TradeExecClient(base_url="http://localhost:7860")
+            self.client = TradeExecClient(base_url="http://localhost:7865")
             obs = await self.client.reset(task_id=task_id, seed=int(seed))
 
         self.task_id = task_id
@@ -219,7 +219,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
         yield "### Error: HF_TOKEN is required for Live Eval.", None, {}, "[ERROR] Missing Token"
         return
 
-    client = TradeExecClient(base_url="http://localhost:7860")
+    client = TradeExecClient(base_url="http://localhost:7865")
     llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://api-inference.huggingface.co/v1/")
     heuristic = AlmgrenChrissHeuristic()
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
@@ -316,7 +316,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
 # ---------------------------------------------------------------------------
 async def run_auto_simulation(display_name, mode, seed=42):
     """Run an automated episode based on selected mode."""
-    client = TradeExecClient(base_url="http://localhost:7860")
+    client = TradeExecClient(base_url="http://localhost:7865")
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
     
     try:
