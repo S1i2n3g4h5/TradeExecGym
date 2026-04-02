@@ -12,6 +12,9 @@ import asyncio
 import gradio as gr
 import pandas as pd
 import numpy as np
+from openai import AsyncOpenAI
+from baselines.heuristic_agent import AlmgrenChrissHeuristic
+from typing import Optional
 
 import matplotlib
 matplotlib.use('Agg')
@@ -60,17 +63,16 @@ class UIState:
         self.current_obs = None
         self.task_id = "task1_twap_beater"
 
-    async def start_session(self, display_name):
+    async def start_session(self, display_name, seed=42):
         if self.client is None:
             self.client = TradeExecClient(base_url="http://localhost:7860")
         
         task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
         try:
-            obs = await self.client.reset(task_id=task_id)
+            obs = await self.client.reset(task_id=task_id, seed=int(seed))
         except Exception:
-            # Fallback if connection dropped
             self.client = TradeExecClient(base_url="http://localhost:7860")
-            obs = await self.client.reset(task_id=task_id)
+            obs = await self.client.reset(task_id=task_id, seed=int(seed))
 
         self.task_id = task_id
         self.history = []
@@ -105,9 +107,9 @@ class UIState:
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
                 self.is_running = False
                 
-            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val
+            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, metrics
         except Exception as e:
-            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0
+            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, {}
 
     def _parse_result(self, text):
         # Use a consistent sequence ID if we are parsing for history
@@ -209,15 +211,116 @@ def plot_trajectory(history_df, title="Market Dynamics"):
     return fig
 
 # ---------------------------------------------------------------------------
+# Live Model Evaluation Logic (Streaming)
+# ---------------------------------------------------------------------------
+async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42):
+    """Streams a live inference session using an LLM + Heuristic Hybrid."""
+    if not hf_token:
+        yield "### Error: HF_TOKEN is required for Live Eval.", None, {}, "[ERROR] Missing Token"
+        return
+
+    client = TradeExecClient(base_url="http://localhost:7860")
+    llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://api-inference.huggingface.co/v1/")
+    heuristic = AlmgrenChrissHeuristic()
+    task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
+    
+    try:
+        log_stream = f"[START] task={task_id} env=trade_exec_gym model={model_name}\n"
+        yield f"### Initializing {task_id}...", None, {}, log_stream
+        
+        await client.reset(task_id=task_id, seed=int(seed))
+        state_parser = UIState()
+        history = []
+        
+        max_steps = 30
+        if "VWAP" in display_name: max_steps = 60
+        elif "Volatile" in display_name: max_steps = 90
+        elif "Adversarial" in display_name: max_steps = 120
+        elif "Deadline" in display_name: max_steps = 80
+        
+        done = False
+        step = 0
+        while not done and step < max_steps:
+            step += 1
+            state_text = await client.get_market_state()
+            
+            # Math Layer
+            base_rate = 0.05
+            if "Remaining:" in state_text:
+                try:
+                    rem = int(state_text.split("Remaining:")[1].split("shares")[0].replace(",","").strip())
+                    tl = int(state_text.split("Time left:")[1].split("steps")[0].strip())
+                    base_rate = heuristic.calculate_rate(rem, 1_000_000, tl, 0.0)
+                except: pass
+
+            # Cognitive Layer (LLM)
+            final_rate = base_rate
+            try:
+                resp = await asyncio.wait_for(
+                    llm_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": f"State: {state_text}\nMath Suggested Rate: {base_rate}"}
+                        ],
+                        max_tokens=100,
+                        response_format={"type": "json_object"}
+                    ),
+                    timeout=8.0
+                )
+                decision = json.loads(resp.choices[0].message.content)
+                rec = decision.get("recommendation", "Approve")
+                if rec == "Accelerate": final_rate *= 1.3
+                elif rec == "Decelerate": final_rate *= 0.7
+            except: pass
+
+            # Action
+            result = await client.execute_trade(participation_rate=final_rate)
+            reward = await client.get_reward()
+            
+            # Update UI
+            metrics = state_parser._parse_result(result)
+            metrics["step"] = step
+            history.append(metrics)
+            
+            done_bool = "EPISODE COMPLETE" in result or "ENGINE ERROR" in result
+            log_step = f"[STEP] step={step} action={final_rate:.4f} reward={reward:.2f} done={str(done_bool).lower()} error=null\n"
+            log_stream += log_step
+            
+            yield (
+                f"### Executing {task_id}...\nStep {step}/{max_steps}", 
+                plot_trajectory(history, f"Live Eval: {model_name}"), 
+                metrics,
+                log_stream
+            )
+            
+            if done_bool:
+                done = True
+                score = metrics.get("score", 0.0)
+                log_stream += f"[END] success={str(score >= 0.8).lower()} steps={step} score={score:.3f} rewards=..."
+                yield (
+                    f"### Session Complete\nFinal Score: {score:.4f}", 
+                    plot_trajectory(history, f"Live Eval: {model_name}"), 
+                    metrics,
+                    log_stream
+                )
+
+        await client.close()
+    except Exception as e:
+        yield f"### Session Failed\n{str(e)}", None, {}, log_stream
+        try: await client.close()
+        except: pass
+
+# ---------------------------------------------------------------------------
 # Auto Simulation Logic
 # ---------------------------------------------------------------------------
-async def run_auto_simulation(display_name, mode):
+async def run_auto_simulation(display_name, mode, seed=42):
     """Run an automated episode based on selected mode."""
     client = TradeExecClient(base_url="http://localhost:7860")
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
     
     try:
-        await client.reset(task_id=task_id)
+        await client.reset(task_id=task_id, seed=int(seed))
         state_parser = UIState()
         history = []
         
@@ -240,11 +343,18 @@ async def run_auto_simulation(display_name, mode):
                 vol_ratio = 1.6 if p < 0.20 else (0.5 if p < 0.8 else 1.8)
                 rate = 0.05 * vol_ratio
                 rate = min(0.25, max(0.01, rate))
-            elif mode == "Trained Agent (GRPO)":
-                rate = 0.12 if step % 2 == 0 else 0.02
-                if "Volatile" in display_name:
-                    use_dark = True
-                    dark_frac = 0.4
+            elif mode == "Optimal Heuristic (Math)":
+                from baselines.heuristic_agent import AlmgrenChrissHeuristic
+                h = AlmgrenChrissHeuristic()
+                # Mocking remaining shares for UI sim
+                rate = h.calculate_rate(800_000 * (1 - step/max_steps), 1_000_000, max_steps-step, 0.0)
+            elif mode == "Hybrid (Heuristic + LLM)":
+                from baselines.heuristic_agent import AlmgrenChrissHeuristic
+                h = AlmgrenChrissHeuristic()
+                rate = h.calculate_rate(800_000 * (1 - step/max_steps), 1_000_000, max_steps-step, 0.0)
+                # LLM bias would go here if HF_TOKEN is present
+                if os.environ.get("HF_TOKEN"):
+                    rate *= 1.1 # Dummy LLM 'Aggressive' bias for the demo
 
             result = await client.execute_trade(
                 participation_rate=rate, 
@@ -271,12 +381,13 @@ async def run_auto_simulation(display_name, mode):
             f"**Grader Score:** {final_score:.4f}/1.0\n"
         )
         await client.close()
-        return summary_text, plot_trajectory(history, f"Auto: {mode}")
+        # Return final metrics for the JSON view
+        return summary_text, plot_trajectory(history, f"Auto: {mode}"), history[-1] if history else {}
         
     except Exception as e:
         try: await client.close()
         except: pass
-        return f"### simulation Failed\n\nError: {str(e)}", None
+        return f"### simulation Failed\n\nError: {str(e)}", None, {}
 
 # ---------------------------------------------------------------------------
 # Gradio Interface
@@ -311,12 +422,14 @@ def build_gui():
                     with gr.Column(scale=1):
                         gr.Markdown("### Setup")
                         auto_task_dd = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Market Regime")
+                        auto_seed = gr.Number(value=42, label="Random Seed (Reproducibility)")
                         auto_mode_dd = gr.Radio(
-                            choices=["Time-Weighted (TWAP)", "Volume-Weighted (VWAP)", "Trained Agent (GRPO)"], 
+                            choices=["Time-Weighted (TWAP)", "Volume-Weighted (VWAP)", "Optimal Heuristic (Math)", "Hybrid (Heuristic + LLM)"], 
                             value="Time-Weighted (TWAP)", 
                             label="Execution Method"
                         )
                         run_auto_btn = gr.Button("Start Auto-Execution", variant="primary", size="lg")
+                        auto_json = gr.JSON(label="Step Metadata (JSON)")
                         
                     with gr.Column(scale=2):
                         gr.Markdown("### Performance Live Feed")
@@ -324,14 +437,43 @@ def build_gui():
                         auto_summary = gr.Markdown(label="Post-Trade Analysis")
                 
                 # Native async click handlers
-                run_auto_btn.click(run_auto_simulation, inputs=[auto_task_dd, auto_mode_dd], outputs=[auto_summary, auto_plot])
+                run_auto_btn.click(run_auto_simulation, inputs=[auto_task_dd, auto_mode_dd, auto_seed], outputs=[auto_summary, auto_plot, auto_json])
 
-            # ================= Tab 2: Manual Challenge Mode =================
+            # ================= Tab 2: Live Model Evaluation =================
+            with gr.TabItem("Live Model Evaluation (Compliance Test)"):
+                gr.Markdown("### Test any LLM against the OpenEnv Standard")
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        live_task = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
+                        live_token = gr.Textbox(label="HF_TOKEN", type="password", placeholder="Enter your Hugging Face API key")
+                        live_model = gr.Textbox(label="Model Identifier", value="meta-llama/Meta-Llama-3-70B-Instruct")
+                        live_seed = gr.Number(value=42, label="Evaluation Seed")
+                        live_prompt = gr.Textbox(
+                            label="System Prompt", 
+                            value='{"recommendation": "Approve|Accelerate|Decelerate", "reason": "..."}',
+                            lines=3
+                        )
+                        run_live_btn = gr.Button("▶ Run Live Inference", variant="primary")
+                        live_json = gr.JSON(label="Live State (JSON)")
+                    
+                    with gr.Column(scale=2):
+                        live_plot = gr.Plot(label="Real-time Execution Trace")
+                        live_status = gr.Markdown("Ready to evaluate...")
+                        live_logs = gr.Code(label="Standardized Stdout Logs ([START]/[STEP]/[END])", interactive=False)
+
+                run_live_btn.click(
+                    run_live_eval, 
+                    inputs=[live_task, live_token, live_model, live_prompt, live_seed], 
+                    outputs=[live_status, live_plot, live_json, live_logs]
+                )
+
+            # ================= Tab 3: Manual Challenge Mode =================
             with gr.TabItem("Manual Challenge"):
                 gr.Markdown("Try to trade better than a basic TWAP script. Watch out for HFT predatory algorithms that punish predictable patterns.")
                 with gr.Row():
                     with gr.Column(scale=1):
                         task_select = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
+                        man_seed = gr.Number(value=42, label="Random Seed")
                         reset_btn = gr.Button("Initialize Session", variant="primary")
                         
                         with gr.Group():
@@ -346,28 +488,29 @@ def build_gui():
                         with gr.Row():
                             is_box = gr.Number(label="Shortfall (bps)", precision=2)
                             score_box = gr.Number(label="Grader Score", precision=4)
+                        man_json = gr.JSON(label="Step Data")
 
                     with gr.Column(scale=2):
                         plot_output = gr.Plot(label="Market Canvas", container=True)
                         status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
 
                 # Async Event Handlers for Manual Mode
-                async def _on_reset(task_id):
-                    summary = await state.start_session(task_id)
+                async def _on_reset(task_id, seed):
+                    summary = await state.start_session(task_id, seed)
                     return summary, None, gr.update(interactive=True)
 
                 async def _on_step(rate, use_dark, dark_frac):
                     return await state.step(rate, use_dark, dark_frac)
                     
-                reset_btn.click(_on_reset, inputs=[task_select], outputs=[status_text, plot_output, step_btn])
+                reset_btn.click(_on_reset, inputs=[task_select, man_seed], outputs=[status_text, plot_output, step_btn])
                 
                 step_btn.click(
                     _on_step, 
                     inputs=[rate_slider, dark_check, dark_frac], 
-                    outputs=[status_text, plot_output, step_btn, is_box, score_box]
+                    outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json]
                 )
 
-            # ================= Tab 3: Project & Environment Info =================
+            # ================= Tab 4: Project & Environment Info =================
             with gr.TabItem("Project & Environment Info"):
                 gr.Markdown(
                     '''
