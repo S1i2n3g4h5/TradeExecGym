@@ -416,6 +416,7 @@ CUSTOM_CSS = """
     overflow: hidden;
     text-align: center;
 }
+
 .hero-header::before {
     content: '';
     position: absolute;
