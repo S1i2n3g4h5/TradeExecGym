@@ -401,18 +401,20 @@ CUSTOM_CSS = """
 
 .gradio-container {
     font-family: 'Inter', sans-serif !important;
-    max-width: 1280px !important;
+    max-width: 1200px !important;
+    margin: 0 auto !important;
 }
 
 /* ── Hero header ── */
 .hero-header {
-    background: linear-gradient(135deg, #0f2027 0%, #0d4f3c 50%, #1a1a2e 100%);
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: linear-gradient(135deg, #111827 0%, #064e3b 50%, #111827 100%);
+    border: 1px solid rgba(16, 185, 129, 0.4);
     border-radius: 16px;
-    padding: 32px 40px;
-    margin-bottom: 8px;
+    padding: 40px;
+    margin-bottom: 24px;
     position: relative;
     overflow: hidden;
+    text-align: center;
 }
 .hero-header::before {
     content: '';
@@ -559,26 +561,26 @@ def build_gui():
 
             # ================= Tab 2: Live Model Evaluation =================
             with gr.TabItem("Live Model Evaluation (Compliance Test)"):
-                gr.HTML('<div class="info-section">')
-                gr.Markdown("### Test any LLM against the OpenEnv Standard")
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        live_task = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
-                        live_token = gr.Textbox(label="HF_TOKEN", type="password", placeholder="Enter your Hugging Face API key")
-                        live_model = gr.Textbox(label="Model Identifier", value="meta-llama/Meta-Llama-3-70B-Instruct")
-                        live_seed = gr.Number(value=42, label="Evaluation Seed")
-                        live_prompt = gr.Textbox(
-                            label="System Prompt", 
-                            value='{"recommendation": "Approve|Accelerate|Decelerate", "reason": "..."}',
-                            lines=3
-                        )
-                        run_live_btn = gr.Button("▶ Run Live Inference", variant="primary")
-                        live_json = gr.JSON(label="Live State (JSON)")
-                    
-                    with gr.Column(scale=2):
-                        live_plot = gr.Plot(label="Real-time Execution Trace")
-                        live_status = gr.Markdown("Ready to evaluate...")
-                        live_logs = gr.Code(label="Standardized Stdout Logs ([START]/[STEP]/[END])", interactive=False)
+                with gr.Column(elem_classes=["info-section"]):
+                    gr.Markdown("### Test any LLM against the OpenEnv Standard")
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            live_task = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
+                            live_token = gr.Textbox(label="HF_TOKEN", type="password", placeholder="Enter your Hugging Face API key")
+                            live_model = gr.Textbox(label="Model Identifier", value="meta-llama/Meta-Llama-3-70B-Instruct")
+                            live_seed = gr.Number(value=42, label="Evaluation Seed")
+                            live_prompt = gr.Textbox(
+                                label="System Prompt", 
+                                value='{"recommendation": "Approve|Accelerate|Decelerate", "reason": "..."}',
+                                lines=3
+                            )
+                            run_live_btn = gr.Button("▶ Run Live Inference", variant="primary")
+                            live_json = gr.JSON(label="Live State (JSON)")
+                        
+                        with gr.Column(scale=2):
+                            live_plot = gr.Plot(label="Real-time Execution Trace")
+                            live_status = gr.Markdown("Ready to evaluate...")
+                            live_logs = gr.Code(label="Standardized Stdout Logs ([START]/[STEP]/[END])", interactive=False)
 
                 run_live_btn.click(
                     run_live_eval, 
@@ -588,31 +590,31 @@ def build_gui():
 
             # ================= Tab 3: Manual Challenge Mode =================
             with gr.TabItem("Manual Challenge"):
-                gr.HTML('<div class="info-section">')
-                gr.Markdown("Try to trade better than a basic TWAP script. Watch out for HFT predatory algorithms that punish predictable patterns.")
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        task_select = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
-                        man_seed = gr.Number(value=42, label="Random Seed")
-                        reset_btn = gr.Button("Initialize Session", variant="primary")
-                        
-                        with gr.Group():
-                            gr.Markdown("### Controls")
-                            rate_slider = gr.Slider(minimum=0.0, maximum=0.25, step=0.01, value=0.05, label="Block Rate (e.g. 0.05 = 5% of Volume)")
-                            dark_check = gr.Checkbox(label="Use Dark Pool")
-                            dark_frac = gr.Slider(minimum=0.0, maximum=1.0, step=0.1, value=0.0, label="Dark Pool Fraction")
-                            step_btn = gr.Button("Execute Step", variant="secondary", interactive=False)
+                with gr.Column(elem_classes=["info-section"]):
+                    gr.Markdown("Try to trade better than a basic TWAP script. Watch out for HFT predatory algorithms that punish predictable patterns.")
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            task_select = gr.Dropdown(choices=TASKS, value=TASKS[0], label="Select Task")
+                            man_seed = gr.Number(value=42, label="Random Seed")
+                            reset_btn = gr.Button("Initialize Session", variant="primary")
                             
-                        # Metrics Boxes
-                        gr.Markdown("### Metrics")
-                        with gr.Row():
-                            is_box = gr.Number(label="Shortfall (bps)", precision=2)
-                            score_box = gr.Number(label="Grader Score", precision=4)
-                        man_json = gr.JSON(label="Step Data")
+                            with gr.Group():
+                                gr.Markdown("### Controls")
+                                rate_slider = gr.Slider(minimum=0.0, maximum=0.25, step=0.01, value=0.05, label="Block Rate (e.g. 0.05 = 5% of Volume)")
+                                dark_check = gr.Checkbox(label="Use Dark Pool")
+                                dark_frac = gr.Slider(minimum=0.0, maximum=1.0, step=0.1, value=0.0, label="Dark Pool Fraction")
+                                step_btn = gr.Button("Execute Step", variant="secondary", interactive=False)
+                                
+                            # Metrics Boxes
+                            gr.Markdown("### Metrics")
+                            with gr.Row():
+                                is_box = gr.Number(label="Shortfall (bps)", precision=2)
+                                score_box = gr.Number(label="Grader Score", precision=4)
+                            man_json = gr.JSON(label="Step Data")
 
-                    with gr.Column(scale=2):
-                        plot_output = gr.Plot(label="Market Canvas", container=True)
-                        status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
+                        with gr.Column(scale=2):
+                            plot_output = gr.Plot(label="Market Canvas", container=True)
+                            status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
 
                 # Async Event Handlers for Manual Mode
                 async def _on_reset(task_id, seed):
@@ -632,8 +634,8 @@ def build_gui():
 
             # ================= Tab 4: Project & Environment Info =================
             with gr.TabItem("📖 Project & Environment Info"):
-                gr.HTML('<div class="info-section">')
-                gr.Markdown("""
+                with gr.Column(elem_classes=["info-section"]):
+                    gr.Markdown("""
 ## 🏦 What is TradeExecGym?
 
 Institutional traders don't pick stocks — they figure out how to buy **1,000,000 shares** without
@@ -781,7 +783,6 @@ trade-exec-gym/
 
             # ================= Tab 5: Training & OpenEnv Architecture =================
             with gr.TabItem("🏗️ Architecture & API"):
-                gr.HTML('<div class="info-section">')
                 gr.Markdown("""
 ## 🔌 How Agents Connect
 
