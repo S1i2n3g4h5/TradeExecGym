@@ -559,6 +559,7 @@ def build_gui():
 
             # ================= Tab 2: Live Model Evaluation =================
             with gr.TabItem("Live Model Evaluation (Compliance Test)"):
+                gr.HTML('<div class="info-section">')
                 gr.Markdown("### Test any LLM against the OpenEnv Standard")
                 with gr.Row():
                     with gr.Column(scale=1):
@@ -587,6 +588,7 @@ def build_gui():
 
             # ================= Tab 3: Manual Challenge Mode =================
             with gr.TabItem("Manual Challenge"):
+                gr.HTML('<div class="info-section">')
                 gr.Markdown("Try to trade better than a basic TWAP script. Watch out for HFT predatory algorithms that punish predictable patterns.")
                 with gr.Row():
                     with gr.Column(scale=1):
@@ -775,8 +777,7 @@ trade-exec-gym/
 ├── openenv.yaml   ← OpenEnv manifest
 └── pyproject.toml ← Dependencies
 ```
-""")
-                gr.HTML('</div>')
+""", elem_classes=["info-section"])
 
             # ================= Tab 5: Training & OpenEnv Architecture =================
             with gr.TabItem("🏗️ Architecture & API"):
@@ -788,23 +789,23 @@ TradeExecGym runs on **Meta's OpenEnv Framework (v0.2.1)**. Every interaction go
 **4 MCP tools** — the same standardized protocol used across all OpenEnv environments.
 Both tool-calling LLMs and RL policy networks use identical endpoints.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    TradeExecGym — System Map                        │
-├──────────────────────────┬──────────────────────────────────────────┤
-│  PORT 7860  (Public)     │  PORT 7865  (Internal)                   │
-│  Gradio Dashboard        │  FastAPI + FastMCP Backend               │
-│  ui/app.py               │  server/app.py → openenv.create_app()   │
-│                          │                                          │
-│  ┌──────────────────┐   │  ┌──────────────────────────────────┐    │
-│  │ Auto Simulation  │   │  │  TradeExecEnvironment            │    │
-│  │ Live LLM Eval    │◄──┼──┤  (MCPEnvironment subclass)       │    │
-│  │ Manual Challenge │   │  │  → env/price_model.py (GBM)      │    │
-│  │ Info / Arch Tabs │   │  │  → env/venue_router.py           │    │
-│  └──────────────────┘   │  │  → env/reward.py (sigmoid)       │    │
-│  TradeExecClient        │  │  → tasks/ (5 task configs)       │    │
-│  (httpx async) ─────────┼──►                                  │    │
-└──────────────────────────┴──────────────────────────────────────────┘
+```text
++----------------------------------------------------------------------+
+|                     TradeExecGym - System Map                        |
++--------------------------+-------------------------------------------+
+|  PORT 7860  (Public)     |  PORT 7865  (Internal)                    |
+|  Gradio Dashboard        |  FastAPI + FastMCP Backend                |
+|  ui/app.py               |  server/app.py -> openenv.create_app()    |
+|                          |                                           |
+|  +------------------+    |  +-----------------------------------+    |
+|  | Auto Simulation  |    |  |  TradeExecEnvironment             |    |
+|  | Live LLM Eval    |<---+--+  (MCPEnvironment subclass)        |    |
+|  | Manual Challenge |    |  |  -> env/price_model.py (GBM)      |    |
+|  | Info / Arch Tabs |    |  |  -> env/venue_router.py            |    |
+|  +------------------+    |  |  -> env/reward.py (sigmoid)        |    |
+|  TradeExecClient         |  |  -> tasks/ (5 task configs)        |    |
+|  (httpx async) ----------+-->                                    |    |
++--------------------------+-------------------------------------------+
 ```
 
 ---
@@ -940,8 +941,7 @@ The bounded sigmoid grader maps any IS value to `[-1.0, +1.0]`, guaranteeing:
 [END]   success=true steps=28 score=0.891 rewards=0.12,0.18,...
 ```
 Run `python inference.py` to generate this output. Trajectory saved to `results/`.
-""")
-                gr.HTML('</div>')
+""", elem_classes=["info-section"])
     return demo
 
 if __name__ == "__main__":
