@@ -66,13 +66,13 @@ class UIState:
 
     async def start_session(self, display_name, seed=42):
         if self.client is None:
-            self.client = TradeExecClient(base_url="http://localhost:7865")
+            self.client = TradeExecClient(base_url="http://localhost:7860")
         
         task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
         try:
             obs = await self.client.reset(task_id=task_id, seed=int(seed))
         except Exception:
-            self.client = TradeExecClient(base_url="http://localhost:7865")
+            self.client = TradeExecClient(base_url="http://localhost:7860")
             obs = await self.client.reset(task_id=task_id, seed=int(seed))
 
         self.task_id = task_id
@@ -89,7 +89,7 @@ class UIState:
 
     async def step(self, rate, use_dark, dark_frac):
         if not self.client:
-            return "No session active.", None, gr.update(), 0.0, 0.0
+            return "No session active.", None, gr.update(), 0.0, 0.0, []
         
         try:
             result = await self.client.execute_trade(
@@ -108,9 +108,9 @@ class UIState:
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
                 self.is_running = False
                 
-            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, metrics
+            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.history
         except Exception as e:
-            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, {}
+            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, []
 
     def _parse_result(self, text):
         # Use a consistent sequence ID if we are parsing for history
@@ -217,17 +217,17 @@ def plot_trajectory(history_df, title="Market Dynamics"):
 async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42):
     """Streams a live inference session using an LLM + Heuristic Hybrid."""
     if not hf_token:
-        yield "### Error: HF_TOKEN is required for Live Eval.", None, {}, "[ERROR] Missing Token"
+        yield "### Error: HF_TOKEN is required for Live Eval.", None, [], "[ERROR] Missing Token"
         return
 
-    client = TradeExecClient(base_url="http://localhost:7865")
+    client = TradeExecClient(base_url="http://localhost:7860")
     llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://api-inference.huggingface.co/v1/")
     heuristic = AlmgrenChrissHeuristic()
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
     
     try:
         log_stream = f"[START] task={task_id} env=trade_exec_gym model={model_name}\n"
-        yield f"### Initializing {task_id}...", None, {}, log_stream
+        yield f"### Initializing {task_id}...", None, [], log_stream
         
         await client.reset(task_id=task_id, seed=int(seed))
         state_parser = UIState()
@@ -291,7 +291,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
             yield (
                 f"### Executing {task_id}...\nStep {step}/{max_steps}", 
                 plot_trajectory(history, f"Live Eval: {model_name}"), 
-                metrics,
+                history,
                 log_stream
             )
             
@@ -302,13 +302,13 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
                 yield (
                     f"### Session Complete\nFinal Score: {score:.4f}", 
                     plot_trajectory(history, f"Live Eval: {model_name}"), 
-                    metrics,
+                    history,
                     log_stream
                 )
 
         await client.close()
     except Exception as e:
-        yield f"### Session Failed\n{str(e)}", None, {}, log_stream
+        yield f"### Session Failed\n{str(e)}", None, [], log_stream
         try: await client.close()
         except: pass
 
@@ -317,7 +317,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
 # ---------------------------------------------------------------------------
 async def run_auto_simulation(display_name, mode, seed=42):
     """Run an automated episode based on selected mode."""
-    client = TradeExecClient(base_url="http://localhost:7865")
+    client = TradeExecClient(base_url="http://localhost:7860")
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
     
     try:
@@ -382,13 +382,13 @@ async def run_auto_simulation(display_name, mode, seed=42):
             f"**Grader Score:** {final_score:.4f}/1.0\n"
         )
         await client.close()
-        # Return final metrics for the JSON view
-        return summary_text, plot_trajectory(history, f"Auto: {mode}"), history[-1] if history else {}
+        # Return complete step history for the JSON view
+        return summary_text, plot_trajectory(history, f"Auto: {mode}"), history
         
     except Exception as e:
         try: await client.close()
         except: pass
-        return f"### simulation Failed\n\nError: {str(e)}", None, {}
+        return f"### simulation Failed\n\nError: {str(e)}", None, []
 
 # ---------------------------------------------------------------------------
 # Gradio Interface
@@ -399,34 +399,59 @@ CUSTOM_CSS = """
 /* ── Global font & background ── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+body { background-color: #0b0f19 !important; color: #e2e8f0 !important; }
 .gradio-container {
     font-family: 'Inter', sans-serif !important;
     max-width: 1200px !important;
     margin: 0 auto !important;
+    background-color: transparent !important;
 }
 
 /* ── Hero header ── */
 .hero-header {
-    background: linear-gradient(135deg, #111827 0%, #064e3b 50%, #111827 100%);
-    border: 1px solid rgba(16, 185, 129, 0.4);
+    background: #0f172a;
+    border: 1px solid #1e293b;
     border-radius: 16px;
-    padding: 40px;
+    padding: 50px 20px;
     margin-bottom: 24px;
+    text-align: center;
     position: relative;
     overflow: hidden;
-    text-align: center;
 }
-
 .hero-header::before {
     content: '';
     position: absolute;
-    top: -60px; right: -60px;
-    width: 200px; height: 200px;
-    background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);
+    top: -100px; left: 50%;
+    transform: translateX(-50%);
+    width: 600px; height: 200px;
+    background: radial-gradient(ellipse, rgba(16,185,129,0.15) 0%, transparent 70%);
     border-radius: 50%;
 }
-.hero-header h1 { color: #ecfdf5 !important; font-size: 2rem !important; font-weight: 700 !important; margin: 0 0 4px 0 !important; }
-.hero-header p  { color: #a7f3d0 !important; margin: 0 !important; font-size: 0.95rem !important; }
+.top-pill {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    padding: 6px 16px;
+    border-radius: 24px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    display: inline-block;
+}
+.tech-pill {
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+.tech-pill:hover { background: #334155; border-color: #475569; }
 
 /* ── Info tab prose ── */
 .info-section {
@@ -520,13 +545,26 @@ def build_gui():
 
         gr.HTML("""
         <div class="hero-header">
-          <h1>📈 TradeExecGym</h1>
-          <p>
-            Institutional Smart Order Routing &nbsp;·&nbsp;
-            Almgren-Chriss Market Physics &nbsp;·&nbsp;
-            HFT Adversary Simulation &nbsp;·&nbsp;
-            MCP-Native OpenEnv
-          </p>
+            <div style="display:flex; justify-content:center; margin-bottom:24px; position:relative; z-index:10;">
+                <span class="top-pill">🟢 OPENENV · V1.0.0 · META HACKATHON 2025</span>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:20px; margin-bottom:16px; position:relative; z-index:10;">
+                <span style="font-size:3.5rem;">📈</span>
+                <h1 style="font-size: 3.5rem !important; margin:0 !important; color:#f8fafc !important; font-weight:800 !important; letter-spacing:-1.5px; font-family:'Inter', sans-serif;">
+                    Trade<span style="color:#10b981;">Exec</span>Gym
+                </h1>
+            </div>
+            <p style="color:#94a3b8; font-size:1.1rem; max-width:700px; margin:0 auto 32px auto; line-height:1.6; position:relative; z-index:10;">
+                A physics-grounded Reinforcement Learning environment where AI agents master<br>
+                institutional order routing, market timing, and adversary evasion.
+            </p>
+            <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; position:relative; z-index:10;">
+                <span class="tech-pill"><span style="color:#10b981; font-size:1.1rem;">⚯</span> Python &ge; 3.10</span>
+                <span class="tech-pill"><span style="color:#eab308; font-size:1.1rem;">⚡</span> FastAPI + Uvicorn</span>
+                <span class="tech-pill"><span style="color:#f59e0b; font-size:1.1rem;">🤗</span> HuggingFace Space</span>
+                <span class="tech-pill"><span style="color:#ec4899; font-size:1.1rem;">🔴</span> OpenEnv Core</span>
+                <span class="tech-pill"><span style="color:#3b82f6; font-size:1.1rem;">🐳</span> Docker Ready</span>
+            </div>
         </div>
         """)
         
@@ -550,7 +588,7 @@ def build_gui():
                             label="Execution Method"
                         )
                         run_auto_btn = gr.Button("Start Auto-Execution", variant="primary", size="lg")
-                        auto_json = gr.JSON(label="Step Metadata (JSON)")
+                        auto_json = gr.JSON(label="Complete Step History (All Steps)")
                         
                     with gr.Column(scale=2):
                         gr.Markdown("### Performance Live Feed")
@@ -576,7 +614,7 @@ def build_gui():
                                 lines=3
                             )
                             run_live_btn = gr.Button("▶ Run Live Inference", variant="primary")
-                            live_json = gr.JSON(label="Live State (JSON)")
+                            live_json = gr.JSON(label="Complete Step History (All Steps)")
                         
                         with gr.Column(scale=2):
                             live_plot = gr.Plot(label="Real-time Execution Trace")
@@ -611,7 +649,7 @@ def build_gui():
                             with gr.Row():
                                 is_box = gr.Number(label="Shortfall (bps)", precision=2)
                                 score_box = gr.Number(label="Grader Score", precision=4)
-                            man_json = gr.JSON(label="Step Data")
+                            man_json = gr.JSON(label="Complete Step History (All Steps)")
 
                         with gr.Column(scale=2):
                             plot_output = gr.Plot(label="Market Canvas", container=True)
@@ -818,7 +856,7 @@ All tools are callable via the MCP protocol. Direct HTTP wrappers available via 
 
 ### `GET /health` — Liveness Check
 ```bash
-curl http://localhost:7865/health
+curl http://localhost:7860/health
 # {"status": "ok", "env": "trade_exec_gym", "version": "1.0.0"}
 ```
 
