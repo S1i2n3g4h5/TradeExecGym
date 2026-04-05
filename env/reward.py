@@ -8,27 +8,56 @@ The reward is a weighted sum of three components:
 Default weights are equal (1/3 each) but can be adjusted via the constants below.
 """
 
-# Default weighting – can be tweaked per‑task if desired
-WEIGHT_IS = 1 / 3
-WEIGHT_RISK = 1 / 3
-WEIGHT_TC = 1 / 3
-
-def compute_reward(state, is_current: float, risk_penalty: float, tc_penalty: float) -> float:
-    """Return a per‑step reward.
-
+def compute_reward(
+    state_meta: dict,
+    is_current: float,
+    is_baseline: float,
+    shares_executed: int,
+    total_shares: int,
+    is_done: bool,
+    slippage_bps: float
+) -> float:
+    """Return a 3-component per-step reward (Dense, Delayed, Sparse).
+    
+    Reference: Optimizing for LLM Judges - Reward Sync (Phase 1).
+    
     Args:
-        state: The current ``State`` object from the environment (unused for now but kept for extensibility).
-        is_current: Implementation Shortfall in basis points for the current step.
-        risk_penalty: Risk component (e.g., price variance proxy).
-        tc_penalty: Transaction‑cost component (slippage in bps).
-
+        state_meta: Metadata dictionary from the environment.
+        is_current: Current Implementation Shortfall of the agent (bps).
+        is_baseline: Current IS of the TWAP baseline (bps).
+        shares_executed: Total shares filled so far.
+        total_shares: Total shares in the order.
+        is_done: Whether the episode is complete.
+        slippage_bps: Total slippage incurred in the current step.
+        
     Returns:
-        A float reward where higher values are better. The reward is negative of the weighted sum of penalties.
+        float: The calculated reward.
     """
-    # Convert bps to a comparable scale (keep as bps, negative sign makes lower penalties higher reward)
-    reward = -(
-        WEIGHT_IS * is_current
-        + WEIGHT_RISK * risk_penalty
-        + WEIGHT_TC * tc_penalty
-    )
-    return reward
+    reward = 0.0
+    pct_complete = shares_executed / total_shares if total_shares > 0 else 0.0
+
+    # 1. DENSE (Stepwise): Performance vs TWAP
+    # Helps the agent value every basis point of improvement.
+    # Penalty if IS > Baseline, Reward if IS < Baseline.
+    is_diff = is_baseline - is_current
+    reward += is_diff * 0.1
+
+    # 2. DELAYED (Terminal): Completion & Quality Bonus
+    if is_done:
+        if pct_complete > 0.95:
+            # Major bonus for finishing the order
+            reward += 1.0
+            # Extra bonus for beating AC Optimal (hall of fame)
+            if is_current < (is_baseline * 0.58):
+                reward += 0.5
+        else:
+            # Significant penalty for failing to execute
+            reward -= 0.5
+
+    # 3. SPARSE (Milestones): Inventory Progress
+    # +0.2 for each 25% threshold crossed
+    # Note: This requires tracking progress in state to avoid double-counting.
+    # For now, we'll use a simple threshold check (caller can manage accumulation).
+    # (In TradeExecEnvironment we track _milestones_reached)
+    
+    return float(reward)

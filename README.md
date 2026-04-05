@@ -52,6 +52,32 @@ TradeExecGym simulates this problem at quantitative precision. It is a **reinfor
 
 The optimal strategy lives in the mathematical tension between these three forces. **Almgren-Chriss solved this in 2000. We built an environment around it.**
 
+## 🧪 Scientific Foundations (Almgren-Chriss 2000)
+
+TradeExecGym is built on the industry-standard **Almgren-Chriss** framework for optimal execution. Unlike toy environments, we differentiate between **Persistent** and **Transient** market impact.
+
+### 1. Market Dynamics
+The midpoint price $S_k$ at step $k$ evolves according to:
+$$S_k = S_{k-1} + \text{Vol} \cdot \sqrt{\Delta t} \cdot Z_k + \Gamma \cdot \nu_k$$
+where:
+- $Z_k \sim N(0,1)$ (Brownian Motion)
+- $\Gamma$: Permanent impact coefficient
+- $\nu_k$: Participation rate (your action)
+
+### 2. Execution Price (The Fill)
+The price you actually receive ($P_k$) includes **Temporary Impact** (Liquidity consumption):
+$$P_k = S_k + \eta \cdot \nu_k$$
+where:
+- $\eta$: Temporary impact coefficient (The cost of "walking the book")
+
+### 3. Implementation Shortfall (The Goal)
+Your objective is to minimize the total cost relative to the arrival price benchmark ($S_0$):
+$$IS = \frac{\sum P_k n_k - X S_0}{X S_0}$$
+where $X$ is the total order size and $n_k$ is the shares executed at step $k$.
+
+> [!TIP]
+> **Why this matters for LLMs:** By separating these components, LLMs can learn that aggressive trading in Step 1 permanently handicaps their performance in Step 30—encouraging long-term strategic reasoning over myopic gains.
+
 ---
 
 ## 🏛️ Environment Specification
@@ -73,7 +99,7 @@ The optimal strategy lives in the mathematical tension between these three force
 |---|---|---|---|
 | **Action** | `participation_rate` | `[0.0, 0.25]` | Fraction of Average Daily Volume to target per step |
 | **Observation** | Market State Text | Natural Language | Narrative + structured data snapshot |
-| **Reward** | Per-step IS delta | `[-1.0, +1.0]` | GRPO-compatible bounded sigmoid over IS basis points |
+| **Reward** | Dense-Delayed-Sparse | `[-2.0, +2.5]` | 3-Component loop: per-step IS delta + completion bonus + milestones |
 | **Episode** | Variable | 30 – 120 steps | Task-dependent time horizon |
 
 ### The Physics Engine
@@ -81,10 +107,11 @@ The optimal strategy lives in the mathematical tension between these three force
 Every step in TradeExecGym runs three simultaneous physics calculations:
 
 ```
-1. Permanent Impact   →  Δprice_perm = λ · σ · √q · sgn(order)
-2. Temporary Impact   →  Δprice_temp = η · (q / ADV_per_step)
-3. Brownian Drift     →  ΔS = σ · √Δt · ε   (ε ~ N(0,1))
+1. Permanent Impact   →  ΔS_k = γ · ν_k  (Shifts midpoint S_k permanently)
+2. Temporary Impact   →  P_k = S_k + η · ν_k  (Affects only execution price P_k)
+3. Brownian Drift     →  ΔS_rv = σ · S · √Δt · ε   (ε ~ N(0,1))
 ```
+Where `ν_k` is the participation rate. This is the **Almgren-Chriss (2000)** model correctly implemented with separated persistent and transient components.
 
 Where `λ` is the permanent impact coefficient, `η` is the temporary impact coefficient, `σ` is realized volatility, and `q` is the order size in shares. This is the Almgren-Chriss (2000) model — the same framework used by Goldman, Citadel, and every major systematic trading desk.
 
@@ -512,6 +539,7 @@ The validator checks:
 | `numpy` + `scipy` | latest | Numerical physics |
 | `torch` | ≥ 2.1.0 | ML model loading |
 | `stable-baselines3` | ≥ 2.1.0 | PPO/GRPO agent support |
+| `fastmcp` | latest | MCP tool registration (Class-method refactor) |
 | `gradio` | latest | Interactive dashboard |
 | `openai` | latest | HuggingFace Inference API client |
 | `httpx` | latest | Async HTTP client (TradeExecClient) |

@@ -66,49 +66,56 @@ class TradeExecEnvironment(MCPEnvironment):
 
         self.active_task = None
 
-        # Phase 2 components
         self.price_model: PriceModel = None
         self.venue_router: VenueRouter = None
         self._last_reward: float = 0.0
 
-        # Build FastMCP server with 4 tools
+        # Phase 1: Shadow Baseline Caching
+        self._baseline_cache: dict[int, dict[str, float]] = {}
+        self._last_cache_seed: Optional[int] = None
+        self._milestones_reached: set[float] = set()
+
+        # Build FastMCP server with 4 tools (refactor: class methods)
         mcp = FastMCP("trade_exec_gym")
-
-        @mcp.tool
-        def get_market_state() -> str:
-            """Return a snapshot of the current market state."""
-            return self._build_market_state_text()
-
-        @mcp.tool
-        def get_baseline_comparison() -> str:
-            """Return a comparison against TWAP, VWAP and AC‑optimal baselines."""
-            return self._build_baseline_text()
-
-        @mcp.tool
-        def execute_trade(
-            participation_rate: float,
-            use_dark_pool: bool = False,
-            dark_pool_fraction: float = 0.0,
-            order_type: str = "MARKET",
-            limit_offset_bps: float = 0.0,
-        ) -> str:
-            """Execute a trade for one time step."""
-            return self._execute_trade_logic(
-                participation_rate=float(participation_rate),
-                use_dark_pool=bool(use_dark_pool),
-                dark_pool_fraction=float(dark_pool_fraction),
-                order_type=str(order_type),
-                limit_offset_bps=float(limit_offset_bps),
-            )
-
-        @mcp.tool
-        def get_reward() -> float:
-            """Return the most recent per‑step reward."""
-            return self._last_reward
+        mcp.tool()(self.get_market_state)
+        mcp.tool()(self.get_baseline_comparison)
+        mcp.tool()(self.execute_trade)
+        mcp.tool()(self.get_reward)
 
         # Initialise the MCP base class after tools are defined
         super().__init__(mcp)
-        logger.info("TradeExecEnvironment initialised with 4 MCP tools (added get_reward)")
+        logger.info("TradeExecEnvironment initialised with 4 MCP tools")
+
+    # ── MCP Tool Implementations ───────────────────────────────────────────
+
+    def get_market_state(self) -> str:
+        """Return a snapshot of the current market state."""
+        return self._build_market_state_text()
+
+    def get_baseline_comparison(self) -> str:
+        """Return a comparison against TWAP, VWAP and AC‑optimal baselines."""
+        return self._build_baseline_text()
+
+    def execute_trade(
+        self,
+        participation_rate: float,
+        use_dark_pool: bool = False,
+        dark_pool_fraction: float = 0.0,
+        order_type: str = "MARKET",
+        limit_offset_bps: float = 0.0,
+    ) -> str:
+        """Execute a trade for one time step."""
+        return self._execute_trade_logic(
+            participation_rate=float(participation_rate),
+            use_dark_pool=bool(use_dark_pool),
+            dark_pool_fraction=float(dark_pool_fraction),
+            order_type=str(order_type),
+            limit_offset_bps=float(limit_offset_bps),
+        )
+
+    def get_reward(self) -> float:
+        """Return the most recent per‑step reward."""
+        return self._last_reward
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
 
@@ -141,6 +148,10 @@ class TradeExecEnvironment(MCPEnvironment):
         self._episode_done = False
         self._baseline_step = 0
         self._last_reward = 0.0
+        self._milestones_reached = set()
+
+        # Phase 1: Pre-calculate Shadow Baselines
+        self._calculate_real_baselines(seed)
 
         # Phase 3: init models via active task constraints
         self.price_model = PriceModel(sigma=self.active_task.sigma)
@@ -348,13 +359,17 @@ class TradeExecEnvironment(MCPEnvironment):
             old_price = self._mid_price
             market_state = self.price_model.step(participation_rate)
             
-            # Apply adversarial price slippage
+            # Apply adversarial price slippage (affects midpoint)
             if adv_penalty_bps > 0:
                 market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
 
             self._mid_price = market_state.price
-            slippage_bps = (self._mid_price / old_price - 1.0) * 10_000
-
+            
+            # Slippage this step = Permanent Impact + Temporary Impact
+            # (Note: permanent impact persists in self._mid_price)
+            step_perm_impact = market_state.last_perm_impact_bps
+            step_temp_impact = market_state.last_temp_impact_bps
+            
             # --- Venue routing (with Toxic Flow detection) ---
             dark_filled, lit_filled, dark_price, lit_price, toxic_slippage = self.venue_router.route_order(
                 use_dark_pool=use_dark_pool,
@@ -364,10 +379,14 @@ class TradeExecEnvironment(MCPEnvironment):
                 volatility=self.price_model.sigma
             )
             
-            # Apply Toxic Flow penalty if detected
-            if toxic_slippage > 0:
-                lit_price *= (1.0 + toxic_slippage / 10_000.0)
-                slippage_bps += toxic_slippage
+            # Apply Temporary Impact and Toxic Flow penalty to the Lit leg
+            # Lit Execution Price = Midpoint * (1 + (TempImpact + ToxicSlippage) / 10,000)
+            execution_slippage_bps = step_temp_impact + toxic_slippage
+            if execution_slippage_bps != 0:
+                lit_price *= (1.0 + execution_slippage_bps / 10_000.0)
+            
+            # Total slippage relative to previous midpoint for reporting
+            total_step_slippage_bps = step_perm_impact + execution_slippage_bps
 
             # Fills
             if dark_filled > 0:
@@ -392,10 +411,26 @@ class TradeExecEnvironment(MCPEnvironment):
             current_is = self._compute_current_is()
             twap_is = self._twap_is_at_step()
             vwap_is = self._vwap_is_at_step()
-            risk_penalty = self._mid_price * self._volume_ratio() * (self._step_count / self._max_steps)
+
+            # Sparse Reward: Milestone tracking (25, 50, 75, 100)
+            sparse_bonus = 0.0
+            pct_complete = self._shares_executed / self._total_shares
+            for m in [0.25, 0.50, 0.75, 1.0]:
+                if pct_complete >= m and m not in self._milestones_reached:
+                    self._milestones_reached.add(m)
+                    sparse_bonus += 0.2
             
-            # Compute reward safely
-            self._last_reward = compute_reward(self.state, current_is, risk_penalty, slippage_bps)
+            # Compute reward safely using the new 3-component formula
+            step_reward = compute_reward(
+                state_meta={}, # Reserved for future meta
+                is_current=current_is,
+                is_baseline=twap_is,
+                shares_executed=self._shares_executed,
+                total_shares=self._total_shares,
+                is_done=self._episode_done,
+                slippage_bps=total_step_slippage_bps
+            )
+            self._last_reward = step_reward + sparse_bonus
 
             # Narrative
             narrative = self.active_task.get_market_narrative(
@@ -431,7 +466,7 @@ class TradeExecEnvironment(MCPEnvironment):
                 f"\nORDER: rate={participation_rate:.3f} | {order_type} | "
                 f"{'dark+lit' if dark_filled > 0 else 'lit only'}\n"
                 f"\nFILLS\n"
-                f"  NASDAQ Lit: {lit_filled:,} @ ${self._mid_price:.4f}  (slippage {slippage_bps - toxic_slippage:.2f} bps)"
+                f"  NASDAQ Lit: {lit_filled:,} @ ${lit_price:.4f}  (slippage {execution_slippage_bps:.2f} bps)"
                 f"{dark_line}"
                 f"{toxic_line}\n"
                 f"  Mid Price:  ${self._mid_price:.4f}\n"
@@ -469,16 +504,86 @@ class TradeExecEnvironment(MCPEnvironment):
         return abs(avg_exec - self._arrival_price) / self._arrival_price * 10_000
 
     def _twap_is_at_step(self) -> float:
-        """Simulated TWAP IS at current step (grows slightly over time)."""
-        return 22.0 + self._step_count * 0.12
+        """Shadow Baseline: O(1) lookup of pre-calculated TWAP IS."""
+        return self._baseline_cache.get(self._step_count, {}).get("twap", 22.0)
 
     def _vwap_is_at_step(self) -> float:
-        """Simulated VWAP IS ≈ 80% of TWAP (VWAP is better)."""
-        return self._twap_is_at_step() * 0.80
+        """Shadow Baseline: O(1) lookup of pre-calculated VWAP IS."""
+        return self._baseline_cache.get(self._step_count, {}).get("vwap", 18.0)
 
     def _ac_optimal_is(self) -> float:
-        """Simulated AC Optimal IS ≈ 58% of TWAP (mathematical optimum)."""
-        return self._twap_is_at_step() * 0.58
+        """Shadow Baseline: O(1) lookup of pre-calculated AC Optimal IS."""
+        return self._baseline_cache.get(self._step_count, {}).get("ac", 14.0)
+
+    def _calculate_real_baselines(self, seed: Optional[int]):
+        """Pre-calculate identical-path trajectories for all baselines."""
+        self._baseline_cache = {}
+        
+        # Helper to run a trajectory
+        def run_sim(strategy="twap"):
+            sim_price_model = PriceModel(sigma=self.active_task.sigma)
+            sim_price_model.reset(initial_price=self._arrival_price, seed=seed)
+            total_cost = 0.0
+            shares_executed = 0
+            
+            # Map of step to IS
+            step_is = {}
+            for t in range(1, self._max_steps + 1):
+                # 1. Determine participation rate for this strategy
+                if strategy == "twap":
+                    rate = 1.0 / self._max_steps
+                elif strategy == "vwap":
+                    # Simple VWAP proxy using the session's volume profile
+                    # (Wait, volume ratio depends on step/max_steps)
+                    p = t / self._max_steps
+                    vol_r = 1.0
+                    if p < 0.20: vol_r = 1.6
+                    elif p < 0.80: vol_r = 0.5
+                    else: vol_r = 1.8
+                    rate = (1.0 / self._max_steps) * vol_r
+                else: # AC Optimal (simple 1.5x front-weighting for now)
+                    p = t / self._max_steps
+                    rate = (1.0 / self._max_steps) * (2.0 - 2.0 * p)
+                
+                rate = max(0.001, min(0.25, rate))
+                
+                # 2. Physics Step
+                m_state = sim_price_model.step(rate)
+                
+                # 3. Execution
+                # Execution Price = Midpoint + Temp Impact
+                exec_p = m_state.price * (1.0 + m_state.last_temp_impact_bps / 10_000.0)
+                
+                adv_per_step = ADV_SHARES / 780
+                shares_to_fill = int(rate * adv_per_step * 1.0) # Assume 1.0 vol for baseline
+                
+                total_cost += shares_to_fill * exec_p
+                shares_executed += shares_to_fill
+                
+                # 4. Record IS (bps)
+                current_is = 0.0
+                if shares_executed > 0:
+                    avg_p = total_cost / shares_executed
+                    current_is = abs(avg_p - self._arrival_price) / self._arrival_price * 10_000
+                
+                step_is[t] = current_is
+            return step_is
+
+        twap_data = run_sim("twap")
+        vwap_data = run_sim("vwap")
+        ac_data = run_sim("ac")
+        
+        # Baseline at Step 0 is ALWAYS 0.0 IS
+        self._baseline_cache[0] = {"twap": 0.0, "vwap": 0.0, "ac": 0.0}
+        
+        for t in range(1, self._max_steps + 1):
+            self._baseline_cache[t] = {
+                "twap": twap_data[t],
+                "vwap": vwap_data[t],
+                "ac": ac_data[t]
+            }
+        
+        logger.info("Shadow Baselines cached for episode (seed=%s)", seed)
 
     def _volume_ratio(self) -> float:
         """Intraday volume ratio (U‑shaped: high open/close, low midday)."""
@@ -500,5 +605,6 @@ class TradeExecEnvironment(MCPEnvironment):
             total_shares=self._total_shares,
             current_is=self._compute_current_is(),
             twap_is=self._twap_is_at_step(),
-            vwap_is=self._vwap_is_at_step()
+            vwap_is=self._vwap_is_at_step(),
+            ac_is=self._ac_optimal_is()
         )
