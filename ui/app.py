@@ -30,11 +30,15 @@ try:
     from stable_baselines3 import PPO
     MODEL_PATH = "models/grpo_agent.zip"
     if os.path.exists(MODEL_PATH):
-        _loaded_agent = PPO.load(MODEL_PATH)
-        print(f"[app_visual] Loaded GRPO Agent from {MODEL_PATH}")
+        try:
+            _loaded_agent = PPO.load(MODEL_PATH)
+            print(f"[app_visual] Loaded GRPO Agent from {MODEL_PATH}")
+        except Exception as e:
+            print(f"[app_visual] Failed to load model at {MODEL_PATH}: {e}")
+            _loaded_agent = None
     else:
         _loaded_agent = None
-except ImportError:
+except (ImportError, Exception):
     _loaded_agent = None
 
 TASKS = [
@@ -986,7 +990,6 @@ Run `python inference.py` to generate this output. Trajectory saved to `results/
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_index = False
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     args, unknown = parser.parse_known_args()

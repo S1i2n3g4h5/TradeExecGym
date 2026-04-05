@@ -131,3 +131,55 @@ def test_deadline_grader_complete():
         vwap_is=20.0,
     )
     assert score > 0.0
+
+
+def test_deadline_grader_with_ac_is_kwarg():
+    """Task5 grader must accept ac_is kwarg — matches _compute_grader_score() call path.
+
+    This test reproduces the production call in trade_environment._compute_grader_score(),
+    which passes ac_is as a keyword argument. Previously this crashed with TypeError
+    because task5's get_grader_score() did not declare the ac_is parameter.
+    """
+    task = TaskDeadlinePressure()
+    # Production call signature: all 6 kwargs including ac_is
+    score = task.get_grader_score(
+        shares_executed=999_999,
+        total_shares=1_000_000,
+        current_is=10.0,
+        twap_is=25.0,
+        vwap_is=20.0,
+        ac_is=14.0,  # This kwarg previously caused TypeError → grader score 0.0
+    )
+    assert score > 0.0, (
+        "Task5 grader must accept ac_is kwarg and return > 0.0 for complete episodes"
+    )
+
+
+def test_deadline_grader_incomplete_with_ac_is_kwarg():
+    """Task5 grader still returns 0.0 for incomplete episodes even with ac_is kwarg."""
+    task = TaskDeadlinePressure()
+    score = task.get_grader_score(
+        shares_executed=900_000,  # 90% — below 99.9% gate
+        total_shares=1_000_000,
+        current_is=5.0,
+        twap_is=25.0,
+        vwap_is=20.0,
+        ac_is=14.0,
+    )
+    assert score == 0.0, "Incomplete Task5 episode must return 0.0 regardless of IS quality"
+
+
+def test_all_task_narratives_return_strings():
+    """All tasks must return non-empty narrative strings from get_market_narrative()."""
+    configs = [
+        ("task1_twap_beater",        {"step_count": 10, "shares_remaining": 50_000,  "current_is": 18.0, "is_high_volatility": False}),
+        ("task2_vwap_optimizer",     {"step_count": 20, "shares_remaining": 150_000, "current_is": 22.0, "is_high_volatility": False}),
+        ("task3_volatile_execution", {"step_count": 45, "shares_remaining": 200_000, "current_is": 35.0, "is_high_volatility": True}),
+        ("task4_adversarial",        {"step_count": 60, "shares_remaining": 300_000, "current_is": 20.0, "is_high_volatility": False}),
+        ("task5_deadline_pressure",  {"step_count": 40, "shares_remaining": 500_000, "current_is": 12.0, "is_high_volatility": False}),
+    ]
+    for task_id, kwargs in configs:
+        task = get_task(task_id)
+        narrative = task.get_market_narrative(**kwargs)
+        assert isinstance(narrative, str), f"{task_id} narrative must be a string"
+        assert len(narrative) > 20, f"{task_id} narrative is too short: {narrative!r}"

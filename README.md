@@ -527,6 +527,48 @@ The validator checks:
 
 ---
 
+## 🧪 Validation Results (Hacksprint Final)
+
+TradeExecGym has been subjected to a comprehensive quantitative validation suite to ensure correctness and reproducibility.
+
+### 1. Unit & Integration Tests (`pytest`)
+All **19 tests** pass, covering Almgren-Chriss physics, reward signals, task-specific graders, venue routing, and the full Task 5 production call path.
+
+```
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2
+collected 19 items
+
+tests/test_physics.py::test_price_model_initialization          PASSED
+tests/test_physics.py::test_price_model_step                    PASSED
+tests/test_physics.py::test_price_model_impact                  PASSED
+tests/test_reward.py::test_compute_reward_baseline              PASSED
+tests/test_reward.py::test_compute_reward_optimal               PASSED
+tests/test_tasks.py::test_factory_returns_correct_types         PASSED
+tests/test_tasks.py::test_factory_unknown_falls_back            PASSED
+tests/test_tasks.py::test_task_configs                          PASSED
+tests/test_tasks.py::test_base_grader_perfect_score             PASSED
+tests/test_tasks.py::test_base_grader_zero_completion           PASSED
+tests/test_tasks.py::test_adversary_no_penalty_with_varied_rates PASSED
+tests/test_tasks.py::test_adversary_penalizes_uniform_rates     PASSED
+tests/test_tasks.py::test_deadline_grader_incomplete            PASSED
+tests/test_tasks.py::test_deadline_grader_complete              PASSED
+tests/test_tasks.py::test_deadline_grader_with_ac_is_kwarg      PASSED
+tests/test_tasks.py::test_deadline_grader_incomplete_with_ac_is_kwarg PASSED
+tests/test_tasks.py::test_all_task_narratives_return_strings    PASSED
+tests/test_venue_router.py::test_venue_router_lit_only          PASSED
+tests/test_venue_router.py::test_venue_router_dark_pool         PASSED
+
+============================== 19 passed in 6.32s ==============================
+```
+
+### 2. Physical Basis & Determinism
+- **Physics**: Verified against Almgren-Chriss (2000) equations. Permanent impact shifts the mid-price; temporary impact only affects execution cost.
+- **Determinism**: `VenueRouter` seeded via `np.random.default_rng(seed)` at every episode reset — identical seed produces byte-identical dark-pool outcomes. Confirmed via `reset(seed=42)` across sessions.
+- **Grader Stability**: Grader scores are deterministic and bounded to `[0.0, 1.0]`.
+
+---
+
 ## 📦 Dependencies
 
 | Package | Version | Purpose |
@@ -539,7 +581,6 @@ The validator checks:
 | `numpy` + `scipy` | latest | Numerical physics |
 | `torch` | ≥ 2.1.0 | ML model loading |
 | `stable-baselines3` | ≥ 2.1.0 | PPO/GRPO agent support |
-| `fastmcp` | latest | MCP tool registration (Class-method refactor) |
 | `gradio` | latest | Interactive dashboard |
 | `openai` | latest | HuggingFace Inference API client |
 | `httpx` | latest | Async HTTP client (TradeExecClient) |
@@ -566,7 +607,7 @@ Environment variables:
 |---|---|---|
 | `HF_TOKEN` | *(none)* | HuggingFace API key — enables LLM cognitive layer |
 | `MODEL_NAME` | `meta-llama/Meta-Llama-3-70B-Instruct` | LLM for inference |
-| `ENV_BASE_URL` | `http://localhost:7860` | Backend URL for inference script |
+| `ENV_BASE_URL` | `http://localhost:7865` | Backend URL for inference script |
 | `PORT` | `7860` | Primary public port (HF Spaces managed) |
 
 ---

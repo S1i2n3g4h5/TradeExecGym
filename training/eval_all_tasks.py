@@ -103,7 +103,7 @@ async def run_single_task(base_url: str, task_id: str) -> dict:
 
 async def main():
     parser = argparse.ArgumentParser(description="Evaluate all tasks")
-    parser.add_argument("--url", default="http://localhost:7860")
+    parser.add_argument("--url", default="http://localhost:7865")
     args = parser.parse_args()
 
     base_url = args.url.rstrip("/")

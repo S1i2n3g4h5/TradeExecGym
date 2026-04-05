@@ -14,7 +14,7 @@ except ImportError:
     from client import TradeExecClient
 
 # Configuration
-ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
+ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7865")
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
 MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3-70B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN")
@@ -25,7 +25,7 @@ EVAL_TASKS = [
     "task1_twap_beater",
     "task2_vwap_optimizer",
     "task3_volatile_execution",
-    "task4_adversary_hft",
+    "task4_adversarial",
     "task5_deadline_pressure"
 ]
 

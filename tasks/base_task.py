@@ -45,6 +45,13 @@ class BaseTradeTask(ABC):
             f"Current IS: {current_is:.2f} bps."
         )
 
+    def get_winning_secret(self) -> str:
+        """
+        Provides a high-level strategic hint unique to this task.
+        Visible only during the initial 'MISSION BRIEF' at reset().
+        """
+        return "Steady execution is the key to beating generic baselines."
+
     def get_grader_score(
         self, 
         shares_executed: int, 

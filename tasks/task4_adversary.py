@@ -12,7 +12,6 @@ class TaskAdversary(BaseTradeTask):
         self.arrival_price = 150.0
         self.sigma = 0.02
         self.description = "Sell 600K shares while HFT adversary exploits predictable patterns. Expert difficulty."
-        
         self.participation_history = []
         self.leakage_penalty = 15.0  # bps penalty if detected
 
@@ -49,7 +48,7 @@ class TaskAdversary(BaseTradeTask):
         current_is: float,
         is_high_volatility: bool
     ) -> str:
-        base = super().get_market_narrative(step_count, shares_remaining, current_is, is_high_volatility)
+        progress = (step_count / max(1, self.max_steps)) * 100
         
         # Check if adversary is currently detecting patterns
         leakage = False
@@ -57,6 +56,13 @@ class TaskAdversary(BaseTradeTask):
             if statistics.stdev(self.participation_history) < 0.005:
                 leakage = True
         
-        if leakage:
-            return base + " ⚠️ ADVERSARY ALERT: HFT pattern detection isActive. Uniform trading is being penalized!"
-        return base + " ℹ️ Market status: Stealth preserved. No HFT pattern detection found."
+        status = "⚠️ ADVERSARY ALERT: HFT pattern detection isActive. Uniform trading is being penalized!" if leakage else "ℹ️ Market status: Stealth preserved. No HFT pattern detection found."
+        
+        return (
+            f"SITREP — Step {step_count}/{self.max_steps} ({progress:.1f}%) | "
+            f"Inventory: {shares_remaining:,} shares left | "
+            f"IS: {current_is:.2f} bps | {status}"
+        )
+    
+    def get_winning_secret(self) -> str:
+        return "Stealth through variance. The adversary detects low-variance 'uniform' trading. Strategic secret: Jitter your rate between 0.05 and 0.15 every step to stay below standard deviation thresholds (std_dev > 0.005)."

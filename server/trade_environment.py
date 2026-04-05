@@ -16,6 +16,8 @@ import logging
 from typing import Any, Optional
 from uuid import uuid4
 
+import numpy as np
+
 from fastmcp import FastMCP
 from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.types import Action, Observation, State
@@ -157,13 +159,17 @@ class TradeExecEnvironment(MCPEnvironment):
         self.price_model = PriceModel(sigma=self.active_task.sigma)
         self.price_model.reset(initial_price=self._mid_price, seed=seed)
         self.venue_router = VenueRouter()
+        # Seed venue router with episode seed for deterministic dark-pool outcomes
+        self.venue_router.seed(seed)
 
         description = self.active_task.description
+        winning_secret = self.active_task.get_winning_secret()
         output = (
             f"╔══════════════════════════════════════════════════════╗\n"
             f"║     TradeExecGym — Smart Order Router                ║\n"
             f"╚══════════════════════════════════════════════════════╝\n"
             f"\nTask: {tid}\n{description}\n"
+            f"\n💡 WINNING SECRET: {winning_secret}\n"
             f"\nObjective: Execute {self._total_shares:,} shares in {self._max_steps} steps.\n"
             f"Arrival Price: ${self._arrival_price:.2f}  (IS benchmark — fixed)\n"
             f"\nPerformance Targets (IS = Implementation Shortfall, lower = better):\n"
@@ -249,8 +255,8 @@ class TradeExecEnvironment(MCPEnvironment):
         if steps_left > 0 and self._shares_remaining > 0:
             needed = self._shares_remaining / steps_left
             pace_hint = f"\nPace needed: {needed:,.0f} shares/step to complete on time."
-        if steps_left <= 5 and self._shares_remaining > 0:
-            pace_hint += f"\n⚠️  URGENT: Only {steps_left} steps left!"
+        if steps_left <= max(5, int(self._max_steps * 0.30)) and self._shares_remaining > 0:
+            pace_hint += f"\n⚠️  URGENT: Only {steps_left} steps left — accelerate!"
 
         vs_twap = (
             f"✅ Beating TWAP by {twap_is - current_is:.1f} bps"
@@ -541,9 +547,13 @@ class TradeExecEnvironment(MCPEnvironment):
                     elif p < 0.80: vol_r = 0.5
                     else: vol_r = 1.8
                     rate = (1.0 / self._max_steps) * vol_r
-                else: # AC Optimal (simple 1.5x front-weighting for now)
-                    p = t / self._max_steps
-                    rate = (1.0 / self._max_steps) * (2.0 - 2.0 * p)
+                else: # AC Optimal (hyperbolic decay)
+                    # kappa controls the decay rate (higher kappa = more front-loading)
+                    kappa = 2.0 / self._max_steps
+                    T = self._max_steps
+                    rate_decay = np.cosh(kappa * (T - t)) / np.cosh(kappa * T)
+                    # Target rate: scale total shares by (decay / T) and normalize by ADV
+                    rate = (self.active_task.total_shares / (ADV_SHARES / 780)) * (rate_decay / T) * 1.5
                 
                 rate = max(0.001, min(0.25, rate))
                 

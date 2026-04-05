@@ -76,7 +76,7 @@ async def run_episode(base_url: str, task_id: str, verbose: bool = False) -> dic
 
 async def async_main():
     parser = argparse.ArgumentParser(description="TradeExecGym validation")
-    parser.add_argument("--url", default="http://localhost:7860", help="Server API URL")
+    parser.add_argument("--url", default="http://localhost:7865", help="Server API URL")
     parser.add_argument("--verbose", action="store_true", help="Print debug details")
     args = parser.parse_args()
     
