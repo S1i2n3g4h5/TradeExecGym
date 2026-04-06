@@ -44,17 +44,18 @@ To prove the environment is "not buggy" and "fair," we implement the following v
 
 ### Phase 4: Judge Optimization & Documentation (Week 3)
 - **README Enhancement**: 
-    - Add clear Problem Statement ($4T daily market context).
-    - ASCII Architecture Diagram.
-    - Comparison Table (TradeExecGym vs Atari/CartPole).
-    - **Mathematical Foundation**: Citing Almgren-Chriss (2000).
-- **UI "Cheat Sheet"**: A dedicated Tab in the app showing **Naive Goal** vs **Expert Goal** vs **The Winning "Secret"** for each task.
+    - [x] Add clear Problem Statement ($4T daily market context).
+    - [x] ASCII Architecture Diagram.
+    - [x] **Mathematical Foundation**: Citing Almgren-Chriss (2000).
+    - [ ] **Pending**: Comparison Table (TradeExecGym vs Atari/CartPole).
+- **UI "Cheat Sheet"**: 
+    - [ ] **Pending**: A dedicated Tab in `ui/app.py` showing **Naive Goal** vs **Expert Goal** vs **The Winning "Secret"** for each task.
 
 ### Phase 5: Robustness Validation (Layer 1-4)
-- **Validation Script**: Create `training/robustness_validation.py` (consolidating all `tmp_` scripts).
-- **Determinism Tests**: Verify `same seed = same results`.
-- **Edge Case Suite**: Zero participation, Over-execution, Late-rush penalty validation.
-- **Output**: Automated `ROBUSTNESS_REPORT.json` for submission.
+- **Validation Script**: 
+    - [ ] **Pending**: Create `tests/validate_robustness.py` that consolidates tests and outputs a clean `ROBUSTNESS_REPORT.json`.
+- [x] **Determinism Tests**: Verify `same seed = same results`.
+- [x] **Edge Case Suite**: Zero participation, Over-execution, Late-rush penalty validation.
 
 ---
 
@@ -70,8 +71,11 @@ To prove the environment is "not buggy" and "fair," we implement the following v
 
 ## ✅ Evaluation Checklist (Judge Strategy Alignment)
 
-- [ ] README has architecture diagram and citations.
-- [ ] Code is "Text-Reader Friendly" (Clear comments explaining the 'Why').
-- [ ] Skill Gradient is observable (Optimal > TWAP > Random).
-- [ ] OpenEnv manifests are complete and validated.
-- [ ] Citations to Almgren-Chriss (2000) are prominent.
+- [x] README has architecture diagram and citations.
+- [ ] Code is "Text-Reader Friendly" (Clear comments explaining the 'Why' in `trade_environment.py`).
+- [ ] README has Comparison Table (TradeExecGym vs CartPole/Atari).
+- [ ] UI has 'Cheat Sheet' Strategy Tab.
+- [ ] Unified `validate_robustness.py` script created and generates `ROBUSTNESS_REPORT.json`.
+- [x] Skill Gradient is observable (Optimal > TWAP > Random).
+- [x] OpenEnv manifests are complete and validated.
+- [x] Citations to Almgren-Chriss (2000) are prominent.

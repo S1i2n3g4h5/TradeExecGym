@@ -370,7 +370,13 @@ class TradeExecEnvironment(MCPEnvironment):
             old_price = self._mid_price
             market_state = self.price_model.step(participation_rate)
             
-            # Apply adversarial price slippage (affects midpoint)
+            # Apply adversarial front-run penalty to the MIDPOINT (permanent price shift).
+            # WHY MIDPOINT: When an HFT bot detects your order pattern and front-runs you,
+            # they buy shares at the current mid and immediately reoffer them at a higher
+            # price. This permanently shifts the mid-price against the agent — exactly like
+            # a permanent impact from the Almgren-Chriss model. It is NOT a temporary cost;
+            # the price does NOT revert. This is the defining characteristic of toxic flow.
+            # Reference: Cartea, Jaimungal & Penalva (2015), Chapter 7: Order Flow Toxicity.
             if adv_penalty_bps > 0:
                 market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
 
@@ -527,7 +533,24 @@ class TradeExecEnvironment(MCPEnvironment):
         return self._baseline_cache.get(self._step_count, {}).get("ac", 14.0)
 
     def _calculate_real_baselines(self, seed: Optional[int]):
-        """Pre-calculate identical-path trajectories for all baselines."""
+        """Pre-calculate shadow baseline trajectories on the same price path — O(1) lookup guarantee.
+
+        WHY THIS EXISTS:
+        Naively computing TWAP/VWAP/AC-Optimal IS at every step() call would require re-running
+        entire trajectory simulations (O(T) per step = O(T²) per episode). This function runs
+        all three baseline trajectories ONCE at reset(), using the SAME RNG seed as the agent's
+        episode. Results are stored in `_baseline_cache` keyed by step number, so any baseline
+        IS value at step t is a simple dict lookup: O(1).
+
+        FAIRNESS GUARANTEE:
+        By using the SAME seed, all baselines (TWAP, VWAP, AC Optimal) experience the EXACT same
+        GBM price path as the live agent. Any IS advantage the agent achieves is purely from
+        better trading decisions, not a lucky price sequence.
+
+        AC Optimal uses hyperbolic (cosh/sinh) decay — a front-loaded schedule derived from
+        Almgren-Chriss (2000, Eq. 13) that is analytically optimal for minimizing IS given
+        a known volatility and risk aversion parameter.
+        """
         self._baseline_cache = {}
         
         # Helper to run a trajectory
@@ -614,7 +637,22 @@ class TradeExecEnvironment(MCPEnvironment):
         return "close"
 
     def _compute_grader_score(self) -> float:
-        """Deterministic grader provided by the active task."""
+        """Compute the task-specific grader score (0.0 – 1.0) for leaderboard ranking.
+
+        WHY DELEGATE TO THE TASK:
+        Each of the 5 tasks has a fundamentally different success criterion:
+        - Task 1-3: IS quality relative to AC Optimal (the 50/30/20 weighting)
+        - Task 5: Binary completion gate (score = 0.0 unless ≥99.9% filled)
+        Centralizing grader logic in `get_grader_score()` on each task object allows
+        per-task winner definitions WITHOUT changing the environment's core step logic.
+
+        THE 50/30/20 WEIGHTING (Tasks 1-4 default in base_task.py):
+        - 50% IS Quality: How close agent IS is to the AC Optimal floor (Economic Mastery)
+        - 30% Inventory Completion: Did the agent actually fill the order? (Execution Fidelity)
+        - 20% Baseline Beating: Did the agent outperform TWAP and VWAP? (Relative Edge)
+        This weighting reflects real-world SOR performance attribution — IS quality matters
+        most, but an unfilled order is an operational failure regardless of slippage.
+        """
         return self.active_task.get_grader_score(
             shares_executed=self._shares_executed,
             total_shares=self._total_shares,

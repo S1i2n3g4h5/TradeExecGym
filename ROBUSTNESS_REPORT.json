@@ -1,0 +1,95 @@
+{
+  "timestamp": "2026-04-06T18:48:25.368867+00:00",
+  "version": "1.0.0",
+  "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
+  "layer0_environment_boot": {
+    "tasks": {
+      "task1_twap_beater": "PASS",
+      "task2_vwap_optimizer": "PASS",
+      "task3_volatile_execution": "PASS",
+      "task4_adversarial": "PASS",
+      "task5_deadline_pressure": "PASS"
+    },
+    "modules_imported": true,
+    "status": "PASS"
+  },
+  "layer1_unit_tests": {
+    "passed": 24,
+    "failed": 0,
+    "errors": 0,
+    "status": "PASS",
+    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 24 items\n\ntests/test_adversary_advanced.py .....                                   [ 20%]\ntests/test_physics.py ...                                                [ 33%]\ntests/test_reward.py ..                                                  [ 41%]\ntests/test_tasks.py ............                                         [ 91%]\ntests/test_venue_router.py ..                                            [100%]\n\n============================== 24 passed in 5.40s ==============================\n"
+  },
+  "layer2_baseline_scores": {
+    "scores": {
+      "task1_twap_beater": 0.6375,
+      "task2_vwap_optimizer": 0.269,
+      "task3_volatile_execution": 0.77
+    },
+    "details": {
+      "task1_twap_beater": {
+        "score": 0.6375,
+        "completion_pct": 12.5,
+        "participation_rate_used": 0.033,
+        "threshold": 0.5,
+        "passed": true
+      },
+      "task2_vwap_optimizer": {
+        "score": 0.269,
+        "completion_pct": 75.6,
+        "participation_rate_used": 0.25,
+        "threshold": 0.2,
+        "passed": true
+      },
+      "task3_volatile_execution": {
+        "score": 0.77,
+        "completion_pct": 56.7,
+        "participation_rate_used": 0.2,
+        "threshold": 0.2,
+        "passed": true
+      }
+    },
+    "status": "PASS"
+  },
+  "layer3_skill_gradient": {
+    "agents": {
+      "random": {
+        "is_bps": 17.6,
+        "strategy": "uniform random rate [0.01, 0.25]"
+      },
+      "twap": {
+        "is_bps": 13.16,
+        "strategy": "equal time-slice (shadow baseline)"
+      },
+      "ac_optimal": {
+        "is_bps": 9.77,
+        "strategy": "Almgren-Chriss 2000 optimal"
+      }
+    },
+    "monotonic_ordering": true,
+    "interpretation": "Lower IS bps = better execution. Random > TWAP > AC Optimal confirms skill gradient.",
+    "status": "PASS"
+  },
+  "determinism_check": {
+    "seed42_run1_is": 0.648817,
+    "seed42_run2_is": 0.648817,
+    "seed99_is": 2.400646,
+    "same_seed_deterministic": true,
+    "status": "PASS"
+  },
+  "layer4_openenv_compliance": {
+    "endpoints": {
+      "/health": true,
+      "/reset": true,
+      "/step": true,
+      "/state": true,
+      "/schema": true,
+      "/mcp": true
+    },
+    "core_endpoints_ok": true,
+    "endpoints_passing": "6/6",
+    "status": "PASS"
+  },
+  "overall": "PASS \u2705",
+  "layers_passed": "6/6"
+}

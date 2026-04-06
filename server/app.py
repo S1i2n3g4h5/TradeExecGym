@@ -1,15 +1,15 @@
 """
 TradeExecGym FastAPI application entry point.
 
-Creates the HTTP + WebSocket server exposing TradeExecEnvironment
+Creates the HTTP server exposing TradeExecEnvironment
 via OpenEnv's create_app() pattern. Compatible with MCPToolClient.
 
 Usage:
     # Development
-    uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
+    uvicorn server.app:app --host 0.0.0.0 --port 7865 --reload
 
     # HF Spaces (Docker)
-    uvicorn server.app:app --host 0.0.0.0 --port 7860
+    uvicorn server.app:app --host 0.0.0.0 --port 7865
 """
 import os
 import sys
@@ -42,7 +42,7 @@ app = create_app(
 
 def main():
     import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7865)
 
 if __name__ == "__main__":
     main()

@@ -1,11 +1,11 @@
 """Reward calculation utilities for TradeExecGym.
 
-The reward is a weighted sum of three components:
-* Implementation Shortfall (IS) – lower is better, negative contribution.
-* Risk penalty – proxy for price variance (higher price volatility yields higher penalty).
-* Transaction‑cost penalty – based on slippage (bps) incurred in the last trade.
+The reward is a 3-component dense + sparse + terminal signal:
+* Dense (per-step): IS improvement vs TWAP baseline — weighted 0.1 per bps.
+* Terminal: +1.0 for completing >95% of order; +0.5 excellence bonus for beating AC Optimal.
+* Sparse (milestone): +0.2 per 25% completion threshold crossed.
 
-Default weights are equal (1/3 each) but can be adjusted via the constants below.
+The grader score (0.0–1.0) used in leaderboards is computed separately in TradeExecEnvironment.
 """
 
 def compute_reward(
