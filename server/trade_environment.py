@@ -161,6 +161,11 @@ class TradeExecEnvironment(MCPEnvironment):
         self.venue_router = VenueRouter()
         # Seed venue router with episode seed for deterministic dark-pool outcomes
         self.venue_router.seed(seed)
+        
+        # Ensure task-specific state (e.g. participation history) is reset
+        if hasattr(self.active_task, "_episode_seed"):
+            self.active_task._episode_seed = seed if seed is not None else 42
+        self.active_task.reset()
 
         description = self.active_task.description
         winning_secret = self.active_task.get_winning_secret()

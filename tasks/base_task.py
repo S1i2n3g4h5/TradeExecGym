@@ -13,6 +13,10 @@ class BaseTradeTask(ABC):
         self.sigma: float = 0.02
         self.description: str = "Base trading task."
 
+    def reset(self) -> None:
+        """Override in tasks with episode-level state (e.g. participation history)."""
+        pass
+
     def on_trade_step(
         self,
         step_count: int,

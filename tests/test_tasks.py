@@ -74,11 +74,14 @@ def test_adversary_no_penalty_with_varied_rates():
     """Adversary does NOT penalize if participation varies enough."""
     task = TaskAdversary()
     penalties = []
-    for i in range(10):
-        # Alternate between very different rates
-        rate = 0.05 if i % 2 == 0 else 0.15
+    # Use a high-entropy, non-periodic sequence to evade both detectors
+    import random
+    rng = random.Random(42)
+    rates = [rng.uniform(0.05, 0.20) for _ in range(15)]
+    for i, rate in enumerate(rates):
         p = task.on_trade_step(
-            step_count=i,
+            # step_count starts at 1
+            step_count=i+1,
             participation_rate=rate,
             current_price=150.0,
             shares_executed=i * 5000,
