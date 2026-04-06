@@ -15,6 +15,8 @@ python3 tests/validate_robustness.py --full
 
 Output: `ROBUSTNESS_REPORT.json`
 
+> **CI/CD Note:** Use the offline command (no `--full`) for automated pipelines — it validates all physics, reward, and skill gradient layers without requiring a running server. Add `--full` only for pre-submission checks where the server can be spun up first.
+
 ---
 
 ## What Each Layer Proves

@@ -47,13 +47,13 @@ To prove the environment is "not buggy" and "fair," we implement the following v
     - [x] Add clear Problem Statement ($4T daily market context).
     - [x] ASCII Architecture Diagram.
     - [x] **Mathematical Foundation**: Citing Almgren-Chriss (2000).
-    - [ ] **Pending**: Comparison Table (TradeExecGym vs Atari/CartPole).
+    - [x] **Comparison Table** (TradeExecGym vs Atari/CartPole) — added to README.md.
 - **UI "Cheat Sheet"**: 
-    - [ ] **Pending**: A dedicated Tab in `ui/app.py` showing **Naive Goal** vs **Expert Goal** vs **The Winning "Secret"** for each task.
+    - [x] **Strategy Guide Tab** — implemented in `ui/app.py` lines 711–866 with 3-column Naive/Expert/Secret cards for all 5 tasks.
 
 ### Phase 5: Robustness Validation (Layer 1-4)
 - **Validation Script**: 
-    - [ ] **Pending**: Create `tests/validate_robustness.py` that consolidates tests and outputs a clean `ROBUSTNESS_REPORT.json`.
+    - [x] **Created** `tests/validate_robustness.py` — 5-layer pyramid (Boot/Unit/Baselines/Skill Gradient/API), outputs `ROBUSTNESS_REPORT.json`.
 - [x] **Determinism Tests**: Verify `same seed = same results`.
 - [x] **Edge Case Suite**: Zero participation, Over-execution, Late-rush penalty validation.
 
@@ -72,10 +72,10 @@ To prove the environment is "not buggy" and "fair," we implement the following v
 ## ✅ Evaluation Checklist (Judge Strategy Alignment)
 
 - [x] README has architecture diagram and citations.
-- [ ] Code is "Text-Reader Friendly" (Clear comments explaining the 'Why' in `trade_environment.py`).
-- [ ] README has Comparison Table (TradeExecGym vs CartPole/Atari).
-- [ ] UI has 'Cheat Sheet' Strategy Tab.
-- [ ] Unified `validate_robustness.py` script created and generates `ROBUSTNESS_REPORT.json`.
+- [x] Code is "Text-Reader Friendly" — "why" docstrings added to `_calculate_real_baselines()`, `_compute_grader_score()`, `_execute_trade_logic()` adversary penalty in `trade_environment.py`.
+- [x] README has Comparison Table (TradeExecGym vs CartPole/Atari).
+- [x] UI has 'Cheat Sheet' Strategy Tab (lines 711–866, all 5 tasks).
+- [x] Unified `validate_robustness.py` script created and generates `ROBUSTNESS_REPORT.json`.
 - [x] Skill Gradient is observable (Optimal > TWAP > Random).
 - [x] OpenEnv manifests are complete and validated.
 - [x] Citations to Almgren-Chriss (2000) are prominent.
