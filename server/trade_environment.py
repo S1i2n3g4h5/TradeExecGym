@@ -75,6 +75,7 @@ class TradeExecEnvironment(MCPEnvironment):
         self.venue_router: VenueRouter = None
         self.heuristic = AlmgrenChrissHeuristic()
         self._last_reward: float = 0.0
+        self._prev_is: Optional[float] = None
 
         # Phase 1: Shadow Baseline Caching
         self._baseline_cache: dict[int, dict[str, float]] = {}
@@ -155,6 +156,7 @@ class TradeExecEnvironment(MCPEnvironment):
         self._episode_done = False
         self._baseline_step = 0
         self._last_reward = 0.0
+        self._prev_is = None
         self._milestones_reached = set()
 
         # Phase 1: Pre-calculate Shadow Baselines
@@ -304,6 +306,52 @@ class TradeExecEnvironment(MCPEnvironment):
             is_high_volatility=(self.active_task.sigma > 0.04)
         )
 
+        # ── IS trend (last step vs now) ────────────────────────────────────────
+        is_trend = ""
+        if hasattr(self, '_prev_is') and self._prev_is is not None:
+            delta = current_is - self._prev_is
+            if abs(delta) > 0.01:
+                is_trend = f" ({'📉 improving' if delta < 0 else '📈 worsening'} {abs(delta):.2f} bps vs last step)"
+        self._prev_is = current_is
+
+        # ── Last reward signal ─────────────────────────────────────────────────
+        reward_hint = ""
+        if self._step_count > 0 and self._last_reward is not None:
+            r = self._last_reward
+            reward_hint = f"\n  Last Reward:   {r:+.3f}  ({'✅ positive — keep going' if r > 0 else '⚠️ negative — adjust strategy'})"
+
+        # ── Projected fill with suggested rate ────────────────────────────────
+        proj_shares = int(suggested_rate * ADV_PER_STEP * vol_ratio)
+        proj_pct_step = proj_shares / self._total_shares * 100
+
+        # ── Current grader score estimate ─────────────────────────────────────
+        grader_now = self._compute_grader_score()
+        grader_hint = f"\n  Est. Score:    {grader_now:.4f} / 1.0000  (target ≥ 0.80 for professional tier)"
+
+        # ── Task 4 adversary metrics (extra detail for LLM decision-making) ───
+        adversary_detail = ""
+        if hasattr(self, 'active_task') and hasattr(self.active_task, '_rate_history'):
+            rh = self.active_task._rate_history
+            if len(rh) >= 3:
+                import statistics
+                std = statistics.stdev(rh[-10:]) if len(rh) >= 2 else 0.0
+                lag1 = 0.0
+                if len(rh) >= 3:
+                    pairs = list(zip(rh[-10:-1], rh[-9:]))
+                    if pairs:
+                        mean_r = sum(rh[-10:]) / len(rh[-10:])
+                        num = sum((a - mean_r) * (b - mean_r) for a, b in pairs)
+                        den = sum((x - mean_r) ** 2 for x in rh[-10:]) or 1e-9
+                        lag1 = num / den
+                threshold_std = getattr(self.active_task, 'detection_threshold', 0.005)
+                threshold_lag = getattr(self.active_task, 'autocorr_threshold', 0.7)
+                adversary_detail = (
+                    f"\n\nADVERSARY METRICS (Task 4)\n"
+                    f"  Rate StdDev (last 10):  {std:.4f}  (need > {threshold_std} to avoid detection)\n"
+                    f"  Lag-1 Autocorrelation:  {lag1:.4f}  (need < {threshold_lag} to avoid detection)\n"
+                    f"  {'⚠️  DETECTED: Randomize your next rate NOW!' if std < threshold_std or lag1 > threshold_lag else '✅ Stealth OK: patterns sufficiently random'}"
+                )
+
         return (
             f"⚡ REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"
             f"   Unexecuted shares at deadline = severe score penalty.\n"
@@ -321,13 +369,18 @@ class TradeExecEnvironment(MCPEnvironment):
             f"\nMARKET CONDITIONS\n"
             f"  Volume Ratio: {vol_ratio:.2f}×  (1.0 = normal daily avg)\n"
             f"  Session:      {session}\n"
-            f"  Dark Pool:    {'✅ Available' if dark_avail else '❌ Not available'}\n"
+            f"  Dark Pool:    {'✅ Available — use dark_pool_fraction=0.3-0.5 to cut spread cost' if dark_avail else '❌ Not available (order too small)'}\n"
             f"\nPERFORMANCE  (IS = basis points, lower = better)\n"
-            f"  Your IS:   {current_is:.2f} bps   {vs_twap}\n"
+            f"  Your IS:   {current_is:.2f} bps{is_trend}   {vs_twap}\n"
             f"  TWAP IS:   {twap_is:.2f} bps\n"
-            f"  VWAP IS:   {vwap_is:.2f} bps{pace_alert}\n"
+            f"  VWAP IS:   {vwap_is:.2f} bps{reward_hint}{grader_hint}{pace_alert}\n"
+            f"\nACTION PREVIEW  (if you use suggested rate)\n"
+            f"  Will fill:  ~{proj_shares:,} shares ({proj_pct_step:.2f}% of total) this step\n"
+            f"  Remaining after: ~{max(0, self._shares_remaining - proj_shares):,} shares\n"
+            f"{adversary_detail}\n"
             f"\n👉 SUGGESTED ACTION: participation_rate={suggested_rate:.3f}\n"
-            f"   (Almgren-Chriss optimal for current inventory/time remaining)"
+            f"   (Almgren-Chriss optimal for current inventory/time remaining)\n"
+            f"   rate_multiplier > 1.0 = trade faster | < 1.0 = slower | 1.0 = approve"
         )
 
     def _build_baseline_text(self) -> str:
