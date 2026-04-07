@@ -726,7 +726,6 @@ def _load_robustness_report():
 def build_gui():
     with gr.Blocks(
         title="TradeExecGym — Institutional SOR Dashboard",
-        css=CUSTOM_CSS,
     ) as demo:
 
         # ── Hero Banner ──────────────────────────────────────────────────────
@@ -1397,4 +1396,5 @@ if __name__ == "__main__":
         server_name=args.host,
         theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="slate"),
         css=CUSTOM_CSS,
+        show_error=True,
     )
