@@ -52,8 +52,6 @@ TradeExecGym simulates this problem at quantitative precision. It is a **reinfor
 
 The optimal strategy lives in the mathematical tension between these three forces. **Almgren-Chriss solved this in 2000. We built an environment around it.**
 
-<<<<<<< HEAD
-=======
 ## 🧪 Scientific Foundations (Almgren-Chriss 2000)
 
 TradeExecGym is built on the industry-standard **Almgren-Chriss** framework for optimal execution. Unlike toy environments, we differentiate between **Persistent** and **Transient** market impact.
@@ -100,7 +98,6 @@ Most RL benchmarks train agents on physics sandboxes or arcade games. TradeExecG
 
 > **In short:** CartPole teaches an agent to balance a stick. TradeExecGym teaches it to minimize slippage on a 1,000,000-share institutional order — a problem worth ~$50B/year in saved costs to the industry.
 
->>>>>>> gh/feature/planning-docs
 ---
 
 ## 🏛️ Environment Specification
@@ -122,11 +119,7 @@ Most RL benchmarks train agents on physics sandboxes or arcade games. TradeExecG
 |---|---|---|---|
 | **Action** | `participation_rate` | `[0.0, 0.25]` | Fraction of Average Daily Volume to target per step |
 | **Observation** | Market State Text | Natural Language | Narrative + structured data snapshot |
-<<<<<<< HEAD
-| **Reward** | Per-step IS delta | `[-1.0, +1.0]` | GRPO-compatible bounded sigmoid over IS basis points |
-=======
 | **Reward** | Dense-Delayed-Sparse | `[-2.0, +2.5]` | 3-Component loop: per-step IS delta + completion bonus + milestones |
->>>>>>> gh/feature/planning-docs
 | **Episode** | Variable | 30 – 120 steps | Task-dependent time horizon |
 
 ### The Physics Engine
@@ -134,18 +127,11 @@ Most RL benchmarks train agents on physics sandboxes or arcade games. TradeExecG
 Every step in TradeExecGym runs three simultaneous physics calculations:
 
 ```
-<<<<<<< HEAD
-1. Permanent Impact   →  Δprice_perm = λ · σ · √q · sgn(order)
-2. Temporary Impact   →  Δprice_temp = η · (q / ADV_per_step)
-3. Brownian Drift     →  ΔS = σ · √Δt · ε   (ε ~ N(0,1))
-```
-=======
 1. Permanent Impact   →  ΔS_k = γ · ν_k  (Shifts midpoint S_k permanently)
 2. Temporary Impact   →  P_k = S_k + η · ν_k  (Affects only execution price P_k)
 3. Brownian Drift     →  ΔS_rv = σ · S · √Δt · ε   (ε ~ N(0,1))
 ```
 Where `ν_k` is the participation rate. This is the **Almgren-Chriss (2000)** model correctly implemented with separated persistent and transient components.
->>>>>>> gh/feature/planning-docs
 
 Where `λ` is the permanent impact coefficient, `η` is the temporary impact coefficient, `σ` is realized volatility, and `q` is the order size in shares. This is the Almgren-Chriss (2000) model — the same framework used by Goldman, Citadel, and every major systematic trading desk.
 
@@ -176,18 +162,11 @@ Five tasks. Increasing difficulty. Each designed to break a different class of n
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  TASK 4: Adversarial HFT                                    VERY HARD 🟣    │
 │  ─────────────────────────────────────────────────────────────────────────  │
-<<<<<<< HEAD
-│  200K shares · 120 steps · Active HFT predator                               │
-│  A predatory algo watches your trade signature. If your participation rate   │
-│  standard deviation drops below 0.005 (you're too uniform), it front-runs   │
-│  you and slaps a 50 bps penalty on your next fill. Be erratic. Stay alive.  │
-=======
 │  600K shares · 120 steps · Predatory HFT Sniper                              │
 │  An adaptive algorithm watches your signature. Unlike simple models, we use │
 │  dual-detectors: **Uniformity** (StdDev < 0.005) AND **Periodicity**        │
 │  (Lag-1 Autocorrelation |r| > 0.7). If detected, the HFT front-runs you,    │
 │  applying a ~15 bps penalty. **Winning Strategy: Randomize your patterns.** │
->>>>>>> gh/feature/planning-docs
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  TASK 5: Deadline Cliff                                       EXTREME ⚫    │
 │  ─────────────────────────────────────────────────────────────────────────  │
@@ -206,13 +185,8 @@ TradeExecGym exposes **4 MCP tools** via its FastAPI + FastMCP backend. These ar
 ### `GET /health` — Health Check
 
 ```bash
-<<<<<<< HEAD
-curl http://localhost:7860/health
-# → {"status": "ok", "env": "trade_exec_gym", "version": "1.0.0"}
-=======
 curl http://localhost:7865/health
 # → {"status": "healthy"}
->>>>>>> gh/feature/planning-docs
 ```
 
 ---
@@ -356,8 +330,6 @@ reward = get_reward()
 
 ---
 
-<<<<<<< HEAD
-=======
 ## 🛡️ Robustness Validation — The 4-Layer Pyramid
 
 TradeExecGym ships with a unified validation gauntlet that proves the environment is scientifically sound in one command:
@@ -395,7 +367,6 @@ python3 tests/validate_robustness.py --full
 
 ---
 
->>>>>>> gh/feature/planning-docs
 ## 🏗️ Architecture
 
 ```
@@ -530,11 +501,7 @@ Open **http://localhost:7860** to access the dashboard.
 # Build the image
 docker build -t trade-exec-gym .
 
-<<<<<<< HEAD
-# Run (both services start automatically via start.sh)
-=======
 # Run (both services start automatically via Dockerfile CMD)
->>>>>>> gh/feature/planning-docs
 docker run -p 7860:7860 -e HF_TOKEN=your_token trade-exec-gym
 ```
 
@@ -560,11 +527,7 @@ uv run python inference.py
 [END] success=true steps=28 score=0.891 rewards=0.12,0.18,...
 ```
 
-<<<<<<< HEAD
-Results are saved to `results/trajectory_YYYYMMDD_HHMMSS.json`.
-=======
 Results are printed to stdout in OpenEnv compliance format.
->>>>>>> gh/feature/planning-docs
 
 ---
 
@@ -617,17 +580,11 @@ The validator checks:
 - ✅ Server starts and `/health` responds
 - ✅ All 5 task resets succeed
 - ✅ `[START]/[STEP]/[END]` log format compliance
-<<<<<<< HEAD
-- ✅ Reward signal bounded to `[-1.0, 1.0]`
-=======
 - ✅ Reward signal correctly computed (dense IS delta + terminal bonus)
->>>>>>> gh/feature/planning-docs
 - ✅ Episode terminates correctly on completion
 
 ---
 
-<<<<<<< HEAD
-=======
 ## 🧪 Validation Results (Hacksprint Final)
 
 TradeExecGym has been subjected to a comprehensive quantitative validation suite to ensure correctness and reproducibility.
@@ -687,7 +644,6 @@ To ensure the environment is fair and rewards strategic reasoning, we benchmarke
 
 ---
 
->>>>>>> gh/feature/planning-docs
 ## 📦 Dependencies
 
 | Package | Version | Purpose |
@@ -713,11 +669,7 @@ uv pip install -e .   # uses pyproject.toml
 
 ## 🐳 Docker & Deployment
 
-<<<<<<< HEAD
-The container runs **two processes** via `start.sh`:
-=======
 The container runs **two processes** via the Dockerfile `CMD`:
->>>>>>> gh/feature/planning-docs
 
 ```
 Process 1: uvicorn server.app:app --port 7865   # Internal MCP backend
@@ -730,11 +682,7 @@ Environment variables:
 |---|---|---|
 | `HF_TOKEN` | *(none)* | HuggingFace API key — enables LLM cognitive layer |
 | `MODEL_NAME` | `meta-llama/Meta-Llama-3-70B-Instruct` | LLM for inference |
-<<<<<<< HEAD
-| `ENV_BASE_URL` | `http://localhost:7860` | Backend URL for inference script |
-=======
 | `ENV_BASE_URL` | `http://localhost:7865` | Backend URL for inference script |
->>>>>>> gh/feature/planning-docs
 | `PORT` | `7860` | Primary public port (HF Spaces managed) |
 
 ---
@@ -768,20 +716,11 @@ trade-exec-gym/
 ├── training/                   # GRPO training scripts
 ├── models/                     # Pre-trained agent checkpoints
 ├── tests/                      # Pytest validation suite
-<<<<<<< HEAD
-├── results/                    # Trajectory JSON output logs
-=======
->>>>>>> gh/feature/planning-docs
 ├── client.py                   # Async httpx TradeExecClient SDK
 ├── inference.py                # OpenEnv compliance inference runner
 ├── openenv.yaml                # OpenEnv manifest
 ├── pyproject.toml              # Project metadata + dependencies
-<<<<<<< HEAD
-├── Dockerfile                  # Multi-process container
-└── start.sh                    # Container entrypoint script
-=======
 └── Dockerfile                  # Multi-process container
->>>>>>> gh/feature/planning-docs
 ```
 
 ---
@@ -798,14 +737,9 @@ trade-exec-gym/
 }
 ```
 
-<<<<<<< HEAD
-**Reference:**
-> Almgren, R., & Chriss, N. (2000). *Optimal execution of portfolio transactions*. Journal of Risk, 3(2), 5–39.
-=======
 **References:**
 - Almgren, R., & Chriss, N. (2000). *Optimal execution of portfolio transactions*. Journal of Risk, 3(2), 5–39.
 - Cartea, Á., Jaimungal, S., & Penalva, J. (2015). *Algorithmic and High-Frequency Trading*. Cambridge University Press. (Predatory Trading & Pattern Detection logic).
->>>>>>> gh/feature/planning-docs
 
 ---
 
