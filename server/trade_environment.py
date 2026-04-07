@@ -263,6 +263,32 @@ class TradeExecEnvironment(MCPEnvironment):
             },
         )
 
+    def step(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
+        """Override step() to inject grader score as reward and episode done flag.
+
+        The OpenEnv Phase 2 validator checks that the reward field on each
+        step response is a float in [0.0, 1.0] (the grader score) and that
+        done=True when the episode ends.  The base MCPEnvironment always
+        returns reward=None on CallToolObservation — we patch that here.
+        """
+        obs = super().step(action, timeout_s=timeout_s, **kwargs)
+
+        # Inject grader score (0.0–1.0) and done flag into every response
+        # so the Meta dashboard Phase 2 validator sees a valid reward signal.
+        try:
+            grader_score = self._compute_grader_score()
+            obs.reward = grader_score
+            obs.done = self._episode_done
+        except Exception:
+            pass  # Never crash the step — leave reward as-is on error
+
+        return obs
+
     def _step_impl(
         self,
         action: Action,
