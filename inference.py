@@ -189,7 +189,7 @@ async def run_hybrid_inference():
     with open(out_file, "w") as f:
         json.dump(full_trajectory, f, indent=2)
     
-    print(f"\n✅ All tasks evaluated. Trajectory saved to: {out_file}")
+    print(f"\n[DONE] All tasks evaluated. Trajectory saved to: {out_file}")
 
 if __name__ == "__main__":
     asyncio.run(run_hybrid_inference())

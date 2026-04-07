@@ -322,7 +322,7 @@ class TradeExecEnvironment(MCPEnvironment):
 
         # ── Projected fill with suggested rate ────────────────────────────────
         proj_shares = int(suggested_rate * ADV_PER_STEP * vol_ratio)
-        proj_pct_step = proj_shares / self._total_shares * 100
+        proj_pct_step = (proj_shares / self._total_shares * 100) if self._total_shares > 0 else 0.0
 
         # ── Current grader score estimate ─────────────────────────────────────
         grader_now = self._compute_grader_score()
@@ -330,27 +330,32 @@ class TradeExecEnvironment(MCPEnvironment):
 
         # ── Task 4 adversary metrics (extra detail for LLM decision-making) ───
         adversary_detail = ""
-        if hasattr(self, 'active_task') and hasattr(self.active_task, '_rate_history'):
-            rh = self.active_task._rate_history
-            if len(rh) >= 3:
+        if self._task_id == "task4_adversarial" and hasattr(self.active_task, 'participation_history'):
+            ph = self.active_task.participation_history
+            if len(ph) >= 5:
                 import statistics
-                std = statistics.stdev(rh[-10:]) if len(rh) >= 2 else 0.0
+                std = statistics.stdev(ph)
                 lag1 = 0.0
-                if len(rh) >= 3:
-                    pairs = list(zip(rh[-10:-1], rh[-9:]))
-                    if pairs:
-                        mean_r = sum(rh[-10:]) / len(rh[-10:])
-                        num = sum((a - mean_r) * (b - mean_r) for a, b in pairs)
-                        den = sum((x - mean_r) ** 2 for x in rh[-10:]) or 1e-9
-                        lag1 = num / den
-                threshold_std = getattr(self.active_task, 'detection_threshold', 0.005)
-                threshold_lag = getattr(self.active_task, 'autocorr_threshold', 0.7)
+                if len(ph) >= 3:
+                    # Robust lag-1 autocorr for small samples
+                    x = ph[:-1]
+                    y = ph[1:]
+                    if np.std(x) > 0 and np.std(y) > 0:
+                        lag1 = np.corrcoef(x, y)[0, 1]
+                
+                # Check thresholds (defaults matching TaskAdversary)
+                threshold_std = 0.005
+                threshold_lag = 0.70
+                is_detected = (std < threshold_std or abs(lag1) > threshold_lag)
+                
                 adversary_detail = (
                     f"\n\nADVERSARY METRICS (Task 4)\n"
-                    f"  Rate StdDev (last 10):  {std:.4f}  (need > {threshold_std} to avoid detection)\n"
+                    f"  Rate StdDev (last 5):   {std:.4f}  (need > {threshold_std} to avoid detection)\n"
                     f"  Lag-1 Autocorrelation:  {lag1:.4f}  (need < {threshold_lag} to avoid detection)\n"
-                    f"  {'⚠️  DETECTED: Randomize your next rate NOW!' if std < threshold_std or lag1 > threshold_lag else '✅ Stealth OK: patterns sufficiently random'}"
+                    f"  {'⚠️  DETECTED: Randomize your next rate NOW!' if is_detected else '✅ Stealth OK: patterns sufficiently random'}"
                 )
+            else:
+                adversary_detail = "\n\nADVERSARY METRICS (Task 4)\n  Gathering pattern data... (requires 5 steps)"
 
         return (
             f"⚡ REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"

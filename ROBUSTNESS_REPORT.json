@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-07T06:16:06.930659+00:00",
+  "timestamp": "2026-04-07T07:56:33.463083+00:00",
   "version": "1.0.0",
   "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
   "layer0_environment_boot": {
@@ -18,7 +18,7 @@
     "failed": 0,
     "errors": 0,
     "status": "PASS",
-    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 41 items\n\ntests/test_adversary_advanced.py .....                                   [ 12%]\ntests/test_edge_cases.py ..........                                      [ 36%]\ntests/test_physics.py ......                                             [ 51%]\ntests/test_reward.py ..                                                  [ 56%]\ntests/test_tasks.py .............                                        [ 87%]\ntests/test_venue_router.py .....                                         [100%]\n\n============================== 41 passed in 4.35s ==============================\n"
+    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 41 items\n\ntests/test_adversary_advanced.py .....                                   [ 12%]\ntests/test_edge_cases.py ..........                                      [ 36%]\ntests/test_physics.py ......                                             [ 51%]\ntests/test_reward.py ..                                                  [ 56%]\ntests/test_tasks.py .............                                        [ 87%]\ntests/test_venue_router.py .....                                         [100%]\n\n============================== 41 passed in 4.22s ==============================\n"
   },
   "layer2_baseline_scores": {
     "scores": {
@@ -72,7 +72,7 @@
   },
   "performance_profiling": {
     "reset_time_ms": 0.65,
-    "avg_step_time_ms": 0.021,
+    "avg_step_time_ms": 0.03,
     "reset_threshold_ms": 200.0,
     "step_threshold_ms": 10.0,
     "reset_pass": true,
