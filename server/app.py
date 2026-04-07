@@ -46,6 +46,23 @@ app = create_app(
 )
 
 
+@app.get("/")
+def root():
+    """Root redirect to API docs."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/ui")
+def ui_redirect():
+    """UI info page (Gradio runs separately on port 7861)."""
+    return {
+        "message": "Gradio UI runs on port 7861",
+        "env_api": "http://localhost:7860",
+        "docs": "http://localhost:7860/docs"
+    }
+
+
 def main():
     import uvicorn
     port = int(os.getenv("PORT", "7860"))
