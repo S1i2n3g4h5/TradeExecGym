@@ -75,27 +75,17 @@ class TradeExecClient(MCPToolClient):
 
             if "EPISODE COMPLETE" in result:
                 for line in result.split("\n"):
-<<<<<<< HEAD
-                    if "Final IS:" in line:
-                        try:
-                            results["final_is_bps"] = float(line.split(":")[1].replace(" bps", "").strip())
-=======
                     line = line.strip()
                     if "Final IS:" in line:
                         try:
                             raw = line.split("Final IS:")[1].strip()
                             results["final_is_bps"] = float(raw.lower().replace("bps", "").strip().split()[0])
->>>>>>> gh/feature/planning-docs
                         except Exception:
                             pass
                     if "Grader Score:" in line:
                         try:
-<<<<<<< HEAD
-                            results["grader_score"] = float(line.split(":")[1].split("/")[0].strip())
-=======
                             raw = line.split("Grader Score:")[1].strip()
                             results["grader_score"] = float(raw.split("/")[0].strip())
->>>>>>> gh/feature/planning-docs
                         except Exception:
                             pass
                 break

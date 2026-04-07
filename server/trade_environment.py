@@ -16,28 +16,18 @@ import logging
 from typing import Any, Optional
 from uuid import uuid4
 
-<<<<<<< HEAD
-=======
 import numpy as np
 
->>>>>>> gh/feature/planning-docs
 from fastmcp import FastMCP
 from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.types import Action, Observation, State
 
-<<<<<<< HEAD
-# Phase 2 components
-=======
 # Phase 2 components
->>>>>>> gh/feature/planning-docs
 try:
     from env.price_model import PriceModel
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
-<<<<<<< HEAD
-=======
     from baselines.heuristic_agent import AlmgrenChrissHeuristic
->>>>>>> gh/feature/planning-docs
 except ImportError:
     import sys
     import os
@@ -45,10 +35,7 @@ except ImportError:
     from env.price_model import PriceModel
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
-<<<<<<< HEAD
-=======
     from baselines.heuristic_agent import AlmgrenChrissHeuristic
->>>>>>> gh/feature/planning-docs
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +43,7 @@ from tasks.factory import get_task
 
 # Average daily volume (shares/day). Used for participation rate → shares.
 ADV_SHARES = 10_000_000
-<<<<<<< HEAD
-=======
 ADV_PER_STEP = ADV_SHARES / 780  # 780 30-sec intervals in a 6.5h session
->>>>>>> gh/feature/planning-docs
 
 
 class TradeExecEnvironment(MCPEnvironment):
@@ -87,51 +71,6 @@ class TradeExecEnvironment(MCPEnvironment):
 
         self.active_task = None
 
-<<<<<<< HEAD
-        # Phase 2 components
-        self.price_model: PriceModel = None
-        self.venue_router: VenueRouter = None
-        self._last_reward: float = 0.0
-
-        # Build FastMCP server with 4 tools
-        mcp = FastMCP("trade_exec_gym")
-
-        @mcp.tool
-        def get_market_state() -> str:
-            """Return a snapshot of the current market state."""
-            return self._build_market_state_text()
-
-        @mcp.tool
-        def get_baseline_comparison() -> str:
-            """Return a comparison against TWAP, VWAP and AC‑optimal baselines."""
-            return self._build_baseline_text()
-
-        @mcp.tool
-        def execute_trade(
-            participation_rate: float,
-            use_dark_pool: bool = False,
-            dark_pool_fraction: float = 0.0,
-            order_type: str = "MARKET",
-            limit_offset_bps: float = 0.0,
-        ) -> str:
-            """Execute a trade for one time step."""
-            return self._execute_trade_logic(
-                participation_rate=float(participation_rate),
-                use_dark_pool=bool(use_dark_pool),
-                dark_pool_fraction=float(dark_pool_fraction),
-                order_type=str(order_type),
-                limit_offset_bps=float(limit_offset_bps),
-            )
-
-        @mcp.tool
-        def get_reward() -> float:
-            """Return the most recent per‑step reward."""
-            return self._last_reward
-
-        # Initialise the MCP base class after tools are defined
-        super().__init__(mcp)
-        logger.info("TradeExecEnvironment initialised with 4 MCP tools (added get_reward)")
-=======
         self.price_model: PriceModel = None
         self.venue_router: VenueRouter = None
         self.heuristic = AlmgrenChrissHeuristic()
@@ -185,7 +124,6 @@ class TradeExecEnvironment(MCPEnvironment):
     def get_reward(self) -> float:
         """Return the most recent per‑step reward."""
         return self._last_reward
->>>>>>> gh/feature/planning-docs
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
 
@@ -218,23 +156,16 @@ class TradeExecEnvironment(MCPEnvironment):
         self._episode_done = False
         self._baseline_step = 0
         self._last_reward = 0.0
-<<<<<<< HEAD
-=======
         self._prev_is = None
         self._milestones_reached = set()
 
         # Phase 1: Pre-calculate Shadow Baselines
         self._calculate_real_baselines(seed)
->>>>>>> gh/feature/planning-docs
 
         # Phase 3: init models via active task constraints
         self.price_model = PriceModel(sigma=self.active_task.sigma)
         self.price_model.reset(initial_price=self._mid_price, seed=seed)
         self.venue_router = VenueRouter()
-<<<<<<< HEAD
-
-        description = self.active_task.description
-=======
         # Seed venue router with episode seed for deterministic dark-pool outcomes
         self.venue_router.seed(seed)
         
@@ -245,16 +176,12 @@ class TradeExecEnvironment(MCPEnvironment):
 
         description = self.active_task.description
         winning_secret = self.active_task.get_winning_secret()
->>>>>>> gh/feature/planning-docs
         output = (
             f"╔══════════════════════════════════════════════════════╗\n"
             f"║     TradeExecGym — Smart Order Router                ║\n"
             f"╚══════════════════════════════════════════════════════╝\n"
             f"\nTask: {tid}\n{description}\n"
-<<<<<<< HEAD
-=======
             f"\n💡 WINNING SECRET: {winning_secret}\n"
->>>>>>> gh/feature/planning-docs
             f"\nObjective: Execute {self._total_shares:,} shares in {self._max_steps} steps.\n"
             f"Arrival Price: ${self._arrival_price:.2f}  (IS benchmark — fixed)\n"
             f"\nPerformance Targets (IS = Implementation Shortfall, lower = better):\n"
@@ -287,10 +214,7 @@ class TradeExecEnvironment(MCPEnvironment):
                 "total_shares": self._total_shares,
                 "max_steps": self._max_steps,
                 "arrival_price": self._arrival_price,
-<<<<<<< HEAD
-=======
                 "suggested_participation_rate": self._last_suggested_rate,
->>>>>>> gh/feature/planning-docs
             },
         )
 
@@ -340,14 +264,6 @@ class TradeExecEnvironment(MCPEnvironment):
         session = self._intraday_session()
         dark_avail = self._total_shares >= 50_000
 
-<<<<<<< HEAD
-        pace_hint = ""
-        if steps_left > 0 and self._shares_remaining > 0:
-            needed = self._shares_remaining / steps_left
-            pace_hint = f"\nPace needed: {needed:,.0f} shares/step to complete on time."
-        if steps_left <= 5 and self._shares_remaining > 0:
-            pace_hint += f"\n⚠️  URGENT: Only {steps_left} steps left!"
-=======
         # 1. Suggested rate (Almgren-Chriss optimal)
         suggested_rate = self.heuristic.calculate_rate(
             shares_remaining=self._shares_remaining,
@@ -376,7 +292,6 @@ class TradeExecEnvironment(MCPEnvironment):
                     f"\n⚠️  PACE ALERT: At suggested fill rate you will complete ~{finish_pct:.0f}%.\n"
                     f"    MINIMUM REQUIRED: rate ≥ {min_req_rate:.3f} every remaining step to avoid completion failure."
                 )
->>>>>>> gh/feature/planning-docs
 
         vs_twap = (
             f"✅ Beating TWAP by {twap_is - current_is:.1f} bps"
@@ -391,10 +306,6 @@ class TradeExecEnvironment(MCPEnvironment):
             is_high_volatility=(self.active_task.sigma > 0.04)
         )
 
-<<<<<<< HEAD
-        return (
-            f"MARKET STATE — Step {self._step_count}/{self._max_steps}\n"
-=======
         # ── IS trend (last step vs now) ────────────────────────────────────────
         is_trend = ""
         if hasattr(self, '_prev_is') and self._prev_is is not None:
@@ -450,7 +361,6 @@ class TradeExecEnvironment(MCPEnvironment):
             f"⚡ REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"
             f"   Unexecuted shares at deadline = severe score penalty.\n"
             f"\nMARKET STATE — Step {self._step_count}/{self._max_steps}\n"
->>>>>>> gh/feature/planning-docs
             f"{'─'*52}\n"
             f"NARRATIVE: {narrative}\n"
             f"\nINVENTORY\n"
@@ -463,16 +373,6 @@ class TradeExecEnvironment(MCPEnvironment):
             f"  Spread:        {spread_bps:.1f} bps\n"
             f"\nMARKET CONDITIONS\n"
             f"  Volume Ratio: {vol_ratio:.2f}×  (1.0 = normal daily avg)\n"
-<<<<<<< HEAD
-            f"  Session:      {session}  (open/midday/close)\n"
-            f"  Dark Pool:    {'✅ Available (~40% fill rate)' if dark_avail else '❌ Not available'}\n"
-            f"\nPERFORMANCE  (IS = basis points, lower = better)\n"
-            f"  Your IS:   {current_is:.2f} bps   {vs_twap}\n"
-            f"  TWAP IS:   {twap_is:.2f} bps\n"
-            f"  VWAP IS:   {vwap_is:.2f} bps{pace_hint}\n"
-            f"\nACTION: execute_trade(participation_rate=X)\n"
-            f"  Suggested: 0.01–0.05 (passive) | 0.10–0.20 (aggressive)"
-=======
             f"  Session:      {session}\n"
             f"  Dark Pool:    {'✅ Available — use dark_pool_fraction=0.3-0.5 to cut spread cost' if dark_avail else '❌ Not available (order too small)'}\n"
             f"\nPERFORMANCE  (IS = basis points, lower = better)\n"
@@ -486,7 +386,6 @@ class TradeExecEnvironment(MCPEnvironment):
             f"\n👉 SUGGESTED ACTION: participation_rate={suggested_rate:.3f}\n"
             f"   (Almgren-Chriss optimal for current inventory/time remaining)\n"
             f"   rate_multiplier > 1.0 = trade faster | < 1.0 = slower | 1.0 = approve"
->>>>>>> gh/feature/planning-docs
         )
 
     def _build_baseline_text(self) -> str:
@@ -559,9 +458,6 @@ class TradeExecEnvironment(MCPEnvironment):
             old_price = self._mid_price
             market_state = self.price_model.step(participation_rate)
             
-<<<<<<< HEAD
-            # Apply adversarial price slippage
-=======
             # Apply adversarial front-run penalty to the MIDPOINT (permanent price shift).
             # WHY MIDPOINT: When an HFT bot detects your order pattern and front-runs you,
             # they buy shares at the current mid and immediately reoffer them at a higher
@@ -569,22 +465,16 @@ class TradeExecEnvironment(MCPEnvironment):
             # a permanent impact from the Almgren-Chriss model. It is NOT a temporary cost;
             # the price does NOT revert. This is the defining characteristic of toxic flow.
             # Reference: Cartea, Jaimungal & Penalva (2015), Chapter 7: Order Flow Toxicity.
->>>>>>> gh/feature/planning-docs
             if adv_penalty_bps > 0:
                 market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
 
             self._mid_price = market_state.price
-<<<<<<< HEAD
-            slippage_bps = (self._mid_price / old_price - 1.0) * 10_000
-
-=======
             
             # Slippage this step = Permanent Impact + Temporary Impact
             # (Note: permanent impact persists in self._mid_price)
             step_perm_impact = market_state.last_perm_impact_bps
             step_temp_impact = market_state.last_temp_impact_bps
             
->>>>>>> gh/feature/planning-docs
             # --- Venue routing (with Toxic Flow detection) ---
             dark_filled, lit_filled, dark_price, lit_price, toxic_slippage = self.venue_router.route_order(
                 use_dark_pool=use_dark_pool,
@@ -594,12 +484,6 @@ class TradeExecEnvironment(MCPEnvironment):
                 volatility=self.price_model.sigma
             )
             
-<<<<<<< HEAD
-            # Apply Toxic Flow penalty if detected
-            if toxic_slippage > 0:
-                lit_price *= (1.0 + toxic_slippage / 10_000.0)
-                slippage_bps += toxic_slippage
-=======
             # Apply Temporary Impact and Toxic Flow penalty to the Lit leg
             # Lit Execution Price = Midpoint * (1 + (TempImpact + ToxicSlippage) / 10,000)
             execution_slippage_bps = step_temp_impact + toxic_slippage
@@ -608,7 +492,6 @@ class TradeExecEnvironment(MCPEnvironment):
             
             # Total slippage relative to previous midpoint for reporting
             total_step_slippage_bps = step_perm_impact + execution_slippage_bps
->>>>>>> gh/feature/planning-docs
 
             # Fills
             if dark_filled > 0:
@@ -633,12 +516,6 @@ class TradeExecEnvironment(MCPEnvironment):
             current_is = self._compute_current_is()
             twap_is = self._twap_is_at_step()
             vwap_is = self._vwap_is_at_step()
-<<<<<<< HEAD
-            risk_penalty = self._mid_price * self._volume_ratio() * (self._step_count / self._max_steps)
-            
-            # Compute reward safely
-            self._last_reward = compute_reward(self.state, current_is, risk_penalty, slippage_bps)
-=======
 
             # Sparse Reward: Milestone tracking (25, 50, 75, 100)
             sparse_bonus = 0.0
@@ -659,7 +536,6 @@ class TradeExecEnvironment(MCPEnvironment):
                 slippage_bps=total_step_slippage_bps
             )
             self._last_reward = step_reward + sparse_bonus
->>>>>>> gh/feature/planning-docs
 
             # Narrative
             narrative = self.active_task.get_market_narrative(
@@ -695,11 +571,7 @@ class TradeExecEnvironment(MCPEnvironment):
                 f"\nORDER: rate={participation_rate:.3f} | {order_type} | "
                 f"{'dark+lit' if dark_filled > 0 else 'lit only'}\n"
                 f"\nFILLS\n"
-<<<<<<< HEAD
-                f"  NASDAQ Lit: {lit_filled:,} @ ${self._mid_price:.4f}  (slippage {slippage_bps - toxic_slippage:.2f} bps)"
-=======
                 f"  NASDAQ Lit: {lit_filled:,} @ ${lit_price:.4f}  (slippage {execution_slippage_bps:.2f} bps)"
->>>>>>> gh/feature/planning-docs
                 f"{dark_line}"
                 f"{toxic_line}\n"
                 f"  Mid Price:  ${self._mid_price:.4f}\n"
@@ -737,18 +609,6 @@ class TradeExecEnvironment(MCPEnvironment):
         return abs(avg_exec - self._arrival_price) / self._arrival_price * 10_000
 
     def _twap_is_at_step(self) -> float:
-<<<<<<< HEAD
-        """Simulated TWAP IS at current step (grows slightly over time)."""
-        return 22.0 + self._step_count * 0.12
-
-    def _vwap_is_at_step(self) -> float:
-        """Simulated VWAP IS ≈ 80% of TWAP (VWAP is better)."""
-        return self._twap_is_at_step() * 0.80
-
-    def _ac_optimal_is(self) -> float:
-        """Simulated AC Optimal IS ≈ 58% of TWAP (mathematical optimum)."""
-        return self._twap_is_at_step() * 0.58
-=======
         """Shadow Baseline: O(1) lookup of pre-calculated TWAP IS."""
         return self._baseline_cache.get(self._step_count, {}).get("twap", 22.0)
 
@@ -850,7 +710,6 @@ class TradeExecEnvironment(MCPEnvironment):
             }
         
         logger.info("Shadow Baselines cached for episode (seed=%s)", seed)
->>>>>>> gh/feature/planning-docs
 
     def _volume_ratio(self) -> float:
         """Intraday volume ratio (U‑shaped: high open/close, low midday)."""
@@ -866,10 +725,6 @@ class TradeExecEnvironment(MCPEnvironment):
         return "close"
 
     def _compute_grader_score(self) -> float:
-<<<<<<< HEAD
-        """Deterministic grader provided by the active task."""
-        return self.active_task.get_grader_score(
-=======
         """Compute the task-specific grader score (0.0 – 1.0) for leaderboard ranking.
 
         WHY DELEGATE TO THE TASK:
@@ -887,18 +742,12 @@ class TradeExecEnvironment(MCPEnvironment):
         most, but an unfilled order is an operational failure regardless of slippage.
         """
         raw_score = self.active_task.get_grader_score(
->>>>>>> gh/feature/planning-docs
             shares_executed=self._shares_executed,
             total_shares=self._total_shares,
             current_is=self._compute_current_is(),
             twap_is=self._twap_is_at_step(),
-<<<<<<< HEAD
-            vwap_is=self._vwap_is_at_step()
-        )
-=======
             vwap_is=self._vwap_is_at_step(),
             ac_is=self._ac_optimal_is()
         )
         # Final environmental safety-net clamp for (0, 1) exclusive compliance
         return round(float(min(max(raw_score, 0.0001), 0.9999)), 4)
->>>>>>> gh/feature/planning-docs

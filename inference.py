@@ -2,17 +2,10 @@ import os
 import sys
 import json
 import asyncio
-<<<<<<< HEAD
-from typing import Optional, List
-from datetime import datetime
-from openai import AsyncOpenAI
-from baselines.heuristic_agent import AlmgrenChrissHeuristic
-=======
 import textwrap
 from typing import Optional, List
 from datetime import datetime
 from openai import OpenAI  # Mandatory: OpenAI Synchronous Client for all LLM calls
->>>>>>> gh/feature/planning-docs
 
 try:
     from client import TradeExecClient
@@ -20,15 +13,6 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from client import TradeExecClient
 
-<<<<<<< HEAD
-# Configuration
-ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3-70B-Instruct")
-HF_TOKEN = os.environ.get("HF_TOKEN")
-RESULTS_DIR = "results"
-BENCHMARK = "trade_exec_gym"
-=======
 from baselines.heuristic_agent import AlmgrenChrissHeuristic
 
 # ==============================================================================
@@ -45,24 +29,11 @@ ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7865")
 BENCHMARK = "trade_exec_gym"
 RESULTS_DIR = "results"
 SUCCESS_SCORE_THRESHOLD = 0.8
->>>>>>> gh/feature/planning-docs
 
 EVAL_TASKS = [
     "task1_twap_beater",
     "task2_vwap_optimizer",
     "task3_volatile_execution",
-<<<<<<< HEAD
-    "task4_adversary_hft",
-    "task5_deadline_pressure"
-]
-
-HYBRID_SYSTEM_PROMPT = """
-You are the Cognitive Layer of a Hybrid Smart Order Router. 
-The Mathematical Layer has already calculated an 'Optimal participation_rate' based on inventory physics.
-Respond ONLY with a JSON object: {"recommendation": "Approve|Accelerate|Decelerate|Randomize", "reason": "reasoning text"}
-"""
-
-=======
     "task4_adversarial",
     "task5_deadline_pressure"
 ]
@@ -82,34 +53,18 @@ HYBRID_SYSTEM_PROMPT = textwrap.dedent("""
 # ==============================================================================
 # MANDATORY STDOUT FORMATTING
 # ==============================================================================
->>>>>>> gh/feature/planning-docs
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-<<<<<<< HEAD
-=======
     # Reward must be formatted to exactly 2 decimal places
->>>>>>> gh/feature/planning-docs
     print(
         f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
-<<<<<<< HEAD
-def log_end(success: bool, steps: int, score: float, rewards: list[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
-
-async def run_hybrid_inference():
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    api_key = HF_TOKEN or "dummy"
-    llm_client = AsyncOpenAI(api_key=api_key, base_url=API_BASE_URL)
-    heuristic = AlmgrenChrissHeuristic()
-
-=======
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     # Success is a lowercase boolean, score formatted to 2 decimals
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
@@ -128,32 +83,17 @@ async def run_hybrid_inference():
     # Mandatory: OpenAI synchronous client used for LLM cognitive layer
     llm_client = OpenAI(api_key=HF_TOKEN or "dummy", base_url=API_BASE_URL)
     heuristic = AlmgrenChrissHeuristic()
->>>>>>> gh/feature/planning-docs
     full_trajectory = []
 
     async with TradeExecClient(base_url=ENV_BASE_URL) as env_client:
         for task_id in EVAL_TASKS:
             log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
             
-<<<<<<< HEAD
-            obs = await env_client.reset(task_id=task_id, seed=42)
-=======
             await env_client.reset(task_id=task_id, seed=42)
->>>>>>> gh/feature/planning-docs
             
             task_log = {"task": task_id, "steps": []}
             rewards_list = []
             done = False
-<<<<<<< HEAD
-            step = 0
-            final_success = False
-            final_score = 0.0
-            
-            while not done and step < 150:
-                step += 1
-                state_text = await env_client.get_market_state()
-                
-=======
             step_count = 0
             final_success = False
             final_score = 0.0001
@@ -164,49 +104,11 @@ async def run_hybrid_inference():
                 
                 # Retrieve suggested rate from heuristic logic
                 # (Shadowed in state text for the LLM)
->>>>>>> gh/feature/planning-docs
                 suggested_rate = 0.05
                 if "Remaining:" in state_text:
                     try:
                         rem = int(state_text.split("Remaining:")[1].split("shares")[0].replace(",","").strip())
                         steps_left = int(state_text.split("Time left:")[1].split("steps")[0].strip())
-<<<<<<< HEAD
-                        suggested_rate = heuristic.calculate_rate(rem, 1_000_000, steps_left, 0.0)
-                    except: pass
-
-                final_rate = suggested_rate
-                if HF_TOKEN:
-                    try:
-                        resp = await asyncio.wait_for(
-                            llm_client.chat.completions.create(
-                                model=MODEL_NAME,
-                                messages=[
-                                    {"role": "system", "content": HYBRID_SYSTEM_PROMPT},
-                                    {"role": "user", "content": f"State: {state_text}\nRate: {suggested_rate}"}
-                                ],
-                                max_tokens=128,
-                                response_format={"type": "json_object"}
-                            ),
-                            timeout=10.0
-                        )
-                        decision = json.loads(resp.choices[0].message.content)
-                        rec = decision.get("recommendation", "Approve")
-                        if rec == "Accelerate": final_rate *= 1.4
-                        elif rec == "Decelerate": final_rate *= 0.6
-                        elif rec == "Randomize": final_rate *= 1.15
-                    except: pass
-
-                execute_result = await env_client.execute_trade(participation_rate=final_rate)
-                reward = await env_client.get_reward()
-                rewards_list.append(reward)
-                
-                done_bool = "EPISODE COMPLETE" in execute_result
-                log_step(step=step, action=f"{final_rate:.4f}", reward=reward, done=done_bool, error=None)
-
-                # Track trajectory for JSON log
-                task_log["steps"].append({
-                    "step": step,
-=======
                         # Parse total shares from state text for correct rate calculation
                         # Pattern: "Executed:  30,000 / 100,000"
                         if "Executed:" in state_text and "/" in state_text.split("Executed:")[1].split("\n")[0]:
@@ -260,25 +162,11 @@ async def run_hybrid_inference():
                 # Track trajectory for telemetry
                 task_log["steps"].append({
                     "step": step_count,
->>>>>>> gh/feature/planning-docs
                     "action": round(final_rate, 4),
                     "reward": round(reward, 4)
                 })
 
                 if done_bool:
-<<<<<<< HEAD
-                    try:
-                        final_score = float(execute_result.split("Grader Score:")[1].split("/")[0].strip())
-                        final_success = final_score >= 0.8
-                    except: pass
-                    done = True
-            
-            log_end(success=final_success, steps=step, score=final_score, rewards=rewards_list)
-            
-            full_trajectory.append(task_log)
-
-    # Save to file
-=======
                     # Extract grader score from episode-complete result string.
                     # NOTE: get_reward() returns RL reward (can be negative) — NOT grader score.
                     # Grader score is in the narrative: "Grader Score:   0.6375 / 1.0000"
@@ -296,17 +184,12 @@ async def run_hybrid_inference():
             full_trajectory.append(task_log)
 
     # Save finalized trajectory locally
->>>>>>> gh/feature/planning-docs
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_file = os.path.join(RESULTS_DIR, f"trajectory_{ts}.json")
     with open(out_file, "w") as f:
         json.dump(full_trajectory, f, indent=2)
     
-<<<<<<< HEAD
-    print(f"\n✅ All tasks evaluated. Trajectory saved to: {out_file}")
-=======
     print(f"\n[DONE] All tasks evaluated. Trajectory saved to: {out_file}")
->>>>>>> gh/feature/planning-docs
 
 if __name__ == "__main__":
     asyncio.run(run_hybrid_inference())
