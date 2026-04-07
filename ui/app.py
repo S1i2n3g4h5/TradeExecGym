@@ -787,7 +787,7 @@ def build_gui():
         gr.HTML("""
         <div class="hero-header">
             <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;z-index:10;">
-                <span class="top-pill">🟢 OpenEnv &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp; Meta Hackathon 2025</span>
+                <span class="top-pill">🟢 OpenEnv &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp; Meta × HuggingFace Hackathon 2026</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:14px;position:relative;z-index:10;">
                 <span style="font-size:3.2rem;line-height:1;">📈</span>
@@ -795,9 +795,14 @@ def build_gui():
                     Trade<span style="color:#10b981;">Exec</span>Gym
                 </h1>
             </div>
-            <p style="color:#64748b;font-size:1.05rem;max-width:640px;margin:0 auto 30px auto;line-height:1.7;position:relative;z-index:10;">
-                A physics-grounded RL environment where AI agents master institutional order routing,
-                market timing, and adversary evasion — on the <strong style="color:#94a3b8;">Almgren-Chriss model</strong>.
+            <p style="color:#94a3b8;font-size:1.15rem;max-width:680px;margin:0 auto 8px auto;line-height:1.7;position:relative;z-index:10;font-weight:600;letter-spacing:0.3px;">
+                Wall Street's hardest problem. Now an AI playground.
+            </p>
+            <p style="color:#64748b;font-size:0.95rem;max-width:660px;margin:0 auto 30px auto;line-height:1.8;position:relative;z-index:10;">
+                Every day, institutions need to buy millions of shares <em>without crashing the price against themselves</em>. 
+                Too fast = market notices, price spikes. Too slow = HFT bots front-run you. 
+                TradeExecGym lets AI agents solve this — using the same <strong style="color:#94a3b8;">Almgren-Chriss physics model</strong> 
+                used by Goldman Sachs, Citadel, and JPMorgan.
             </p>
             <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;position:relative;z-index:10;">
                 <span class="tech-pill"><span style="color:#10b981;">⚙</span> Python ≥ 3.10</span>
