@@ -152,6 +152,7 @@ class TradeExecEnvironment(MCPEnvironment):
         self._arrival_price = self.active_task.arrival_price
         self._mid_price = self._arrival_price
         self._total_cost = 0.0
+        self._step_count = 0          # ← CRITICAL: must reset between tasks
         self._max_steps = self.active_task.max_steps
         self._episode_done = False
         self._baseline_step = 0
