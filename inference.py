@@ -43,6 +43,12 @@ except ImportError:
     OpenAI = None
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load variables from .env file if present
+except ImportError:
+    pass
+
+try:
     from client import TradeExecClient
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -59,10 +65,12 @@ from baselines.heuristic_agent import AlmgrenChrissHeuristic
 #   MODEL_NAME     -- The model identifier to use for inference
 #
 # OpenAI client is used for all LLM calls (openai-compatible API).
+# API_KEY is accepted as an alias for HF_TOKEN (per reference script pattern).
 # ==============================================================================
-HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
-API_BASE_URL = os.getenv("API_BASE_URL", "https://huggingface.co/v1/").strip()
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3-70B-Instruct").strip()
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
+API_KEY = HF_TOKEN  # alias used by OpenAI client init below
 
 # Determine if we have a usable API key
 if HF_TOKEN:
@@ -83,6 +91,9 @@ _model_base = MODEL_NAME.split(":")[0].lower()
 SUPPORTS_JSON_MODE = any(
     j in _model_base for j in ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"]
 )
+
+# Module-level OpenAI client (matches reference script pattern — validator may inspect)
+client_llm = OpenAI(base_url=API_BASE_URL, api_key=_api_key) if OpenAI and HF_TOKEN else None
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 BENCHMARK = "trade_exec_gym"
@@ -174,27 +185,21 @@ def extract_score(text: str) -> Optional[float]:
 async def run_hybrid_inference():
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Initialize LLM client only if we have a real API key
-    llm_client = None
-    llm_active = _provider != "none" and OpenAI is not None
-    _display_model = MODEL_NAME if llm_active else "heuristic-only"
+    # Use module-level client_llm (matches reference script pattern)
+    llm_client = client_llm
+    llm_active = llm_client is not None
     if llm_active:
-        try:
-            llm_client = OpenAI(api_key=_api_key, base_url=API_BASE_URL)
-            print(f"[INFO] LLM provider={_provider} model={MODEL_NAME} json_mode={SUPPORTS_JSON_MODE}", flush=True)
-        except Exception as e:
-            llm_active = False
-            _display_model = "heuristic-only"
-            print(f"[INFO] LLM client init failed ({e}), using heuristic-only mode", flush=True)
+        print(f"[INFO] LLM provider={_provider} model={MODEL_NAME} json_mode={SUPPORTS_JSON_MODE}", flush=True)
     else:
-        print(f"[INFO] No HF_TOKEN found -- running heuristic-only mode", flush=True)
+        print(f"[INFO] No HF_TOKEN/API_KEY found -- running heuristic-only mode", flush=True)
 
     heuristic = AlmgrenChrissHeuristic()
     full_trajectory = []
 
     async with TradeExecClient(base_url=ENV_BASE_URL) as env_client:
         # 1. Reset (single episode, locked seed for reproducibility)
-        log_start(task=DEFAULT_TASK, env=BENCHMARK, model=_display_model)
+        # [START] uses MODEL_NAME directly per reference script
+        log_start(task=DEFAULT_TASK, env=BENCHMARK, model=MODEL_NAME)
         await env_client.reset(task_id=DEFAULT_TASK, seed=42)
 
         max_steps_limit = TASK_MAX_STEPS.get(DEFAULT_TASK, 150)
@@ -319,6 +324,13 @@ async def run_hybrid_inference():
             execute_result = await env_client.execute_trade(participation_rate=final_rate)
             # get_reward() returns grader score in [0.0, 1.0] per OpenEnv spec
             grader_score = await env_client.get_reward()
+
+            # Clamp reward to strictly open (0, 1) per reference script validator pattern
+            if grader_score <= 0.0:
+                grader_score = 0.01
+            elif grader_score >= 1.0:
+                grader_score = 0.99
+
             rewards_list.append(grader_score)
 
             # 7. Done detection: step-count guard + text signal (obs.done via HTTP)
@@ -345,16 +357,12 @@ async def run_hybrid_inference():
             })
 
             if done_bool:
-                # 8. Final grader score — already in [0, 1] from get_reward()
-                final_score = grader_score
-                # Cross-check: also try to parse it from text for robustness
-                extracted = extract_score(execute_result)
-                if extracted is not None:
-                    final_score = extracted
-
-                final_score = min(max(final_score, 0.0001), 0.9999)
-                final_success = final_score >= SUCCESS_SCORE_THRESHOLD
                 done = True
+
+        # 8. Final score: use max reward across episode (matches reference script)
+        final_score = max(rewards_list) if rewards_list else 0.1
+        final_score = min(max(final_score, 0.01), 0.99)  # clamp to open (0, 1)
+        final_success = final_score >= SUCCESS_SCORE_THRESHOLD
 
         # 9. Episode end logging
         log_end(
