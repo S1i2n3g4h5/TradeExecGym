@@ -1,3 +1,15 @@
+---
+title: TradeExecGym
+emoji: 📈
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+license: mit
+app_port: 7860
+short_description: Smart Order Router RL Environment - OpenEnv Hackathon
+---
+
 # TradeExecGym — Smart Order Router RL Environment
 
 > **Meta x HuggingFace OpenEnv Hackathon Submission**
