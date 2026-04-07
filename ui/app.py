@@ -761,8 +761,8 @@ def build_gui():
             # ═══════════════════════════════════════════════════════════════
             with gr.TabItem("⚡ Auto Simulation"):
                 model_status = (
-                    f"🟢 Local RL agent loaded: `{MODEL_PATH}`" if _loaded_agent
-                    else "🔴 No RL model found — using heuristic fallback."
+                    f"🟢 RL Agent loaded: `{MODEL_PATH}` (PPO trained on TradeExecGym)" if _loaded_agent
+                    else "⚡ Running Almgren-Chriss Heuristic Agent (mathematical optimal baseline)"
                 )
                 gr.Markdown(f"> {model_status}")
 
