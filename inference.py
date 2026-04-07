@@ -51,44 +51,27 @@ except ImportError:
 from baselines.heuristic_agent import AlmgrenChrissHeuristic
 
 # ==============================================================================
-# CREDENTIAL & ENDPOINT AUTO-DETECTION
+# CREDENTIAL & ENDPOINT CONFIGURATION
 # ==============================================================================
-# Priority: OPENAI_API_KEY -> HF_TOKEN -> API_KEY -> "dummy" (heuristic-only)
-# When OPENAI_API_KEY is set: routes to api.openai.com with gpt-4o-mini
-# When HF_TOKEN is set: routes to huggingface.co/v1 with Llama-3-70B
+# Required by hackathon spec:
+#   HF_TOKEN       -- HuggingFace / LLM API key (primary)
+#   API_BASE_URL   -- The API endpoint for the LLM
+#   MODEL_NAME     -- The model identifier to use for inference
+#
+# OpenAI client is used for all LLM calls (openai-compatible API).
 # ==============================================================================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-HF_TOKEN = (os.getenv("HF_TOKEN", "") or os.getenv("API_KEY", "")).strip()
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
+API_BASE_URL = os.getenv("API_BASE_URL", "https://huggingface.co/v1/").strip()
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3-70B-Instruct").strip()
 
-# Auto-detect API provider from key prefix
-if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
-    # Real OpenAI key -- use OpenAI endpoint and GPT-4o-mini
-    _api_key = OPENAI_API_KEY
-    _default_base_url = "https://api.openai.com/v1"
-    _default_model = "gpt-4o-mini"
-    _provider = "openai"
-elif HF_TOKEN:
-    # HuggingFace token -- use HF Inference API with Llama-3-70B
+# Determine if we have a usable API key
+if HF_TOKEN:
     _api_key = HF_TOKEN
-    _default_base_url = "https://huggingface.co/v1/"
-    _default_model = "meta-llama/Meta-Llama-3-70B-Instruct"
     _provider = "huggingface"
-elif OPENAI_API_KEY:
-    # Non-standard key (e.g. proxy, Together, Groq) -- use as-is
-    _api_key = OPENAI_API_KEY
-    _default_base_url = "https://api.openai.com/v1"
-    _default_model = "gpt-4o-mini"
-    _provider = "custom"
 else:
-    # No key -- heuristic-only mode (no LLM calls)
+    # No key -- heuristic-only mode (no LLM calls made)
     _api_key = "dummy"
-    _default_base_url = "https://api.openai.com/v1"
-    _default_model = "heuristic-only"
     _provider = "none"
-
-# Allow full override via environment variables
-API_BASE_URL = os.getenv("API_BASE_URL", "").strip() or _default_base_url
-MODEL_NAME = os.getenv("MODEL_NAME", "").strip() or _default_model
 
 # Models that support json_object response format
 JSON_MODE_MODELS = {
@@ -97,9 +80,8 @@ JSON_MODE_MODELS = {
 }
 # Check if current model supports JSON mode
 _model_base = MODEL_NAME.split(":")[0].lower()
-SUPPORTS_JSON_MODE = (
-    _provider == "openai" and
-    any(j in _model_base for j in ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"])
+SUPPORTS_JSON_MODE = any(
+    j in _model_base for j in ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"]
 )
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
@@ -195,22 +177,24 @@ async def run_hybrid_inference():
     # Initialize LLM client only if we have a real API key
     llm_client = None
     llm_active = _provider != "none" and OpenAI is not None
+    _display_model = MODEL_NAME if llm_active else "heuristic-only"
     if llm_active:
         try:
             llm_client = OpenAI(api_key=_api_key, base_url=API_BASE_URL)
             print(f"[INFO] LLM provider={_provider} model={MODEL_NAME} json_mode={SUPPORTS_JSON_MODE}", flush=True)
         except Exception as e:
             llm_active = False
+            _display_model = "heuristic-only"
             print(f"[INFO] LLM client init failed ({e}), using heuristic-only mode", flush=True)
     else:
-        print(f"[INFO] No API key found -- running heuristic-only mode", flush=True)
+        print(f"[INFO] No HF_TOKEN found -- running heuristic-only mode", flush=True)
 
     heuristic = AlmgrenChrissHeuristic()
     full_trajectory = []
 
     async with TradeExecClient(base_url=ENV_BASE_URL) as env_client:
         # 1. Reset (single episode, locked seed for reproducibility)
-        log_start(task=DEFAULT_TASK, env=BENCHMARK, model=MODEL_NAME)
+        log_start(task=DEFAULT_TASK, env=BENCHMARK, model=_display_model)
         await env_client.reset(task_id=DEFAULT_TASK, seed=42)
 
         max_steps_limit = TASK_MAX_STEPS.get(DEFAULT_TASK, 150)
@@ -331,12 +315,13 @@ async def run_hybrid_inference():
             # Clamp to valid action space [0.01, 0.25]
             final_rate = max(0.01, min(0.25, final_rate))
 
-            # 6. Act: Execute trade
+            # 6. Act: Execute trade — get grader score (0-1) and done flag from response
             execute_result = await env_client.execute_trade(participation_rate=final_rate)
-            reward = await env_client.get_reward()
-            rewards_list.append(reward)
+            # get_reward() returns grader score in [0.0, 1.0] per OpenEnv spec
+            grader_score = await env_client.get_reward()
+            rewards_list.append(grader_score)
 
-            # 7. Done detection (text primary + step-count guard)
+            # 7. Done detection: step-count guard + text signal (obs.done via HTTP)
             done_bool = (
                 "EPISODE COMPLETE" in execute_result
                 or "Episode already complete" in execute_result
@@ -347,7 +332,7 @@ async def run_hybrid_inference():
             log_step(
                 step=step_count,
                 action=f"{final_rate:.4f}",
-                reward=reward,
+                reward=grader_score,
                 done=done_bool,
                 error=None
             )
@@ -355,20 +340,17 @@ async def run_hybrid_inference():
             task_log["steps"].append({
                 "step": step_count,
                 "action": round(final_rate, 4),
-                "reward": round(reward, 4),
+                "reward": round(grader_score, 4),
                 "suggested_rate": round(suggested_rate, 4),
             })
 
             if done_bool:
-                # 8. Extract final grader score
+                # 8. Final grader score — already in [0, 1] from get_reward()
+                final_score = grader_score
+                # Cross-check: also try to parse it from text for robustness
                 extracted = extract_score(execute_result)
                 if extracted is not None:
                     final_score = extracted
-                else:
-                    # Fallback: cumulative reward signal normalized
-                    final_score = max(0.1, min(0.99,
-                        0.5 + sum(rewards_list) / max(1, len(rewards_list)) * 0.1
-                    ))
 
                 final_score = min(max(final_score, 0.0001), 0.9999)
                 final_success = final_score >= SUCCESS_SCORE_THRESHOLD

@@ -89,6 +89,7 @@ tasks:
     total_shares: 100000
     target_is_bps: 25.0
     elite_is_bps: 14.0
+    grader: true
     scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
 
   - id: "task2_vwap_optimizer"
@@ -100,6 +101,7 @@ tasks:
     total_shares: 250000
     target_is_bps: 20.0
     elite_is_bps: 14.0
+    grader: true
     scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
 
   - id: "task3_volatile_execution"
@@ -111,6 +113,7 @@ tasks:
     total_shares: 400000
     target_is_bps: 30.0
     elite_is_bps: 14.0
+    grader: true
     scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
 
   - id: "task4_adversarial"
@@ -123,6 +126,7 @@ tasks:
     total_shares: 600000
     target_is_bps: 35.0
     elite_is_bps: 20.0
+    grader: true
     scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
 
   - id: "task5_deadline_pressure"
@@ -135,4 +139,5 @@ tasks:
     total_shares: 1000000
     target_is_bps: 40.0
     elite_is_bps: 20.0
+    grader: true
     scoring_criteria: "Hard gate: <99.9% completion = score*0.15. Above gate: same 50/30/20 formula."

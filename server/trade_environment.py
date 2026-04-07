@@ -165,8 +165,13 @@ class TradeExecEnvironment(MCPEnvironment):
         )
 
     def get_reward(self) -> float:
-        """Return the most recent per-step reward."""
-        return self._last_reward
+        """Return the current grader score in [0.0, 1.0].
+
+        Per the OpenEnv spec and Meta hackathon validator, the reward exposed
+        to inference scripts must be a normalised grader score in [0.0, 1.0].
+        The raw RL reward (which can be negative) is internal only.
+        """
+        return self._compute_grader_score()
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
 
