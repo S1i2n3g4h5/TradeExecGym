@@ -170,3 +170,6 @@ training_data/
 *.jpg
 results/
 outputs/
+__pycache__/
+*.pyc
+*.pyo
