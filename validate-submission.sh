@@ -1,48 +1,65 @@
 #!/bin/bash
 # TradeExecGym — Validation Gauntlet
 # ============================================================
-# Use this script to verify Phase 1 (Skeleton + Deploy)
-# and all subsequent phases before pushing to HF Spaces.
+# Use this script to verify all phases including Layer 4 API
+# compliance with full robustness validation.
 # ============================================================
 
 set -e
 
 # Default values
-BASE_URL=${1:-"http://localhost:7860"}
+BASE_URL=${1:-"http://localhost:7865"}
 PROJECT_DIR=${2:-"."}
 
-echo "🚀 Starting TradeExecGym Validation Gauntlet..."
-echo "------------------------------------------------------------"
+echo "🚀 Starting TradeExecGym Full Validation Gauntlet..."
+echo "============================================================"
 
-# 1. Health Check
-echo "🔍 Check 1/3: Server Health..."
-HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $BASE_URL/health || echo "FAILED")
+# 1. Start server in background
+echo "📡 Starting server in background..."
+python -m uvicorn server.app:app --host 0.0.0.0 --port 7865 > /tmp/tradegym_server.log 2>&1 &
+SERVER_PID=$!
+echo "   Server started with PID: $SERVER_PID"
 
-if [ "$HEALTH_STATUS" == "200" ]; then
-    echo "✅ Health check passed: HTTP 200"
+# Wait for server to be ready
+echo "   Waiting for server to initialize..."
+sleep 5
+
+# Function to cleanup server on exit
+cleanup() {
+    echo ""
+    echo "🛑 Stopping server (PID: $SERVER_PID)..."
+    kill $SERVER_PID 2>/dev/null || true
+    wait $SERVER_PID 2>/dev/null || true
+    echo "   Server stopped."
+}
+trap cleanup EXIT
+
+# 2. Run full robustness validation (all 5 layers + performance + determinism)
+echo "🔍 Running full robustness validation (Layers 0-4 + Performance)..."
+if python tests/validate_robustness.py --full --url "$BASE_URL"; then
+    echo "✅ Full validation passed!"
 else
-    echo "❌ Health check failed: HTTP $HEALTH_STATUS"
-    echo "   Ensure server is running: py -3.10 -m uvicorn server.app:app --port 7860"
+    echo "❌ Validation failed - check ROBUSTNESS_REPORT.json for details"
     exit 1
 fi
 
-# 2. OpenEnv Validation
-echo "🔍 Check 2/3: OpenEnv Schema Validation..."
-if openenv validate 2>/dev/null; then
-    echo "✅ openenv validate passed"
+# 3. Run edge case test suite
+echo "🔍 Running edge case test suite..."
+if python -m pytest tests/test_edge_cases.py -v; then
+    echo "✅ Edge case tests passed!"
 else
-    echo "❌ openenv validate failed"
-    openenv validate
+    echo "❌ Edge case tests failed"
     exit 1
 fi
 
-# 3. Inference Baseline (Demo Mode)
-echo "🔍 Check 3/3: Inference Baseline (Skeleton Check)..."
-echo "   Running inference.py in demo mode to verify plumbing..."
-
-# Run only first 2 tasks for speed in validation
-MAX_STEPS=5 py -3.10 inference.py --tasks task1_twap_beater,task2_vwap_optimizer
-
-echo "------------------------------------------------------------"
-echo "✅ All 3/3 checks passed! Phase 1 skeleton is ready."
-echo "   You are now cleared to proceed to Phase 2 (Physics Engine)."
+echo "============================================================"
+echo "✅ All validation checks passed!"
+echo "   - Layer 0: Environment Boot ✓"
+echo "   - Layer 1: Unit Tests ✓"
+echo "   - Layer 2: Baseline Scores ✓"
+echo "   - Layer 3: Skill Gradient ✓"
+echo "   - Layer 4: OpenEnv API Compliance ✓"
+echo "   - Performance Profiling ✓"
+echo "   - Determinism Check ✓"
+echo "   - Edge Case Suite ✓"
+echo "============================================================"

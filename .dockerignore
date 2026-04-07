@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+.venv
+venv
+env
+
+# Development/IDE
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Test artifacts
+.pytest_cache
+htmlcov
+.coverage
+coverage.xml
+
+# Tensorboard logs (large)
+tensorboard/
+
+# Local training artifacts
+*.zip
+*.pkl
+
+# Secrets
+.env
+*.env
+secrets/
+
+# Documentation (not needed at runtime)
+*.md
+!README.md
+ROBUSTNESS_VALIDATION_GUIDE.txt
+
+# Unrelated files
+ui/farmsim_project_gradio_app.py
+
+# Results (generated at runtime)
+results/
+
+# uv lock (not needed in container — uv resolves fresh)
+uv.lock

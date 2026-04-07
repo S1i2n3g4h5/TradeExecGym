@@ -105,7 +105,7 @@ async def run_baseline_episode(base_url: str, task_id: str, agent_type: str, ver
 
 async def main():
     parser = argparse.ArgumentParser(description="Evaluate Baselines")
-    parser.add_argument("--url", default="http://localhost:7860", help="Server API URL")
+    parser.add_argument("--url", default="http://localhost:7865", help="Server API URL")
     parser.add_argument("--task", default="task1_twap_beater", help="Task ID to evaluate on (e.g. task1_twap_beater)")
     args = parser.parse_args()
 

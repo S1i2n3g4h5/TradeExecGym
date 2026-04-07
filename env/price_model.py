@@ -4,12 +4,21 @@ from typing import Optional
 
 @dataclass
 class MarketState:
+<<<<<<< HEAD
     price: float
     volatility: float
     cumulative_participation: float
     time: float  # normalized [0,1]
     temporary_impact: float = 0.0
     permanent_impact: float = 0.0
+=======
+    price: float  # The persistent mid-market price
+    volatility: float
+    cumulative_participation: float
+    time: float  # normalized [0,1]
+    last_temp_impact_bps: float = 0.0  # Observed only for the current fill
+    last_perm_impact_bps: float = 0.0  # Persistent shift added this step
+>>>>>>> gh/feature/planning-docs
 
 class PriceModel:
     """Almgren‑Chriss price dynamics (GBM + impact).
@@ -59,6 +68,7 @@ class PriceModel:
         """
         if self.state is None:
             raise RuntimeError("PriceModel must be reset before stepping.")
+<<<<<<< HEAD
         # GBM drift (μ is set to 0 for a martingale price)
         drift = 0.0
         # Random shock
@@ -83,5 +93,43 @@ class PriceModel:
             time=new_time,
             temporary_impact=tmp_impact,
             permanent_impact=perm_impact,
+=======
+            
+        # 1. GBM drift (μ is set to 0 for a martingale price)
+        drift = 0.0
+        z = self.rng.standard_normal()
+        
+        # 2. Random price movement (GBM)
+        # S_k = S_{k-1} * exp((mu - 0.5*sigma^2)*dt + sigma*sqrt(dt)*z)
+        growth_factor = np.exp(
+            (drift - 0.5 * self.sigma ** 2) * self.dt + self.sigma * np.sqrt(self.dt) * z
+        )
+        mid_price = self.state.price * growth_factor
+
+        # 3. Permanent impact (Almgren-Chriss)
+        # This impact shifts the mid-price permanently.
+        # Reference: Almgren & Chriss (2000), Equation 7 (Linear Permanent Impact)
+        perm_impact_bps = self.gamma * participation_rate
+        mid_price *= (1.0 + perm_impact_bps / 10_000.0)
+
+        # 4. Temporary impact (Almgren-Chriss)
+        # This impact affects only the FILL price of this step, not the mid-price.
+        # Reference: Almgren & Chriss (2000), Equation 8 (Linear Temporary Impact)
+        temp_impact_bps = self.eta * participation_rate
+
+        # Update cumulative participation
+        cum_part = self.state.cumulative_participation + participation_rate
+        
+        # Advance time
+        new_time = min(1.0, self.state.time + self.dt)
+        
+        self.state = MarketState(
+            price=mid_price,
+            volatility=self.sigma,
+            cumulative_participation=cum_part,
+            time=new_time,
+            last_temp_impact_bps=temp_impact_bps,
+            last_perm_impact_bps=perm_impact_bps,
+>>>>>>> gh/feature/planning-docs
         )
         return self.state

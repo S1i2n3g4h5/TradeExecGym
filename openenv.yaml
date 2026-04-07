@@ -1,5 +1,9 @@
 # OpenEnv Server Manifest
+<<<<<<< HEAD
 spec_version: 1
+=======
+spec_version: "1"
+>>>>>>> gh/feature/planning-docs
 environment:
   name: "trade_exec_gym"
   description: "Smart Order Router RL Environment. Execute block trades minimizing Implementation Shortfall."
@@ -21,3 +25,13 @@ tasks:
     description: "HFT adversary exploiting predictable passive patterns. Very Hard."
   - id: "task5_deadline_pressure"
     description: "1M shares, huge penalty for unexecuted shares. Extreme."
+<<<<<<< HEAD
+=======
+
+actions:
+  execute_trade:
+    participation_rate:
+      type: float
+      range: [0.0, 0.25]
+      default: 0.05   # TWAP-equivalent, not 0.0
+>>>>>>> gh/feature/planning-docs
