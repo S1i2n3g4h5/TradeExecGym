@@ -1,3 +1,18 @@
+"""
+Task 4: Adversarial HFT
+========================
+Objective: Sell 600,000 shares while an HFT adversary exploits predictable patterns.
+Difficulty: Expert
+Total Shares: 600,000 | Max Steps: 120 | Arrival Price: $150.00
+Winning Strategy: Jitter participation_rate +/- 0.03 each step.
+  Keep Rate StdDev > 0.005 AND Lag-1 Autocorrelation < 0.70 to avoid detection.
+  Target rate range: [0.04, 0.14], varying -0.03 per step.
+Adversary: Dual-gate detector fires 15 bps penalty when pattern detected.
+  Gate 1 (Uniformity): std_dev(last 5 rates) < 0.005 -> detected
+  Gate 2 (Periodic): |lag1_autocorr(last 5 rates)| > 0.70 -> detected
+Grader: 50% IS quality vs AC Optimal, 30% completion, 20% baseline beating.
+Reference: Cartea, Jaimungal & Penalva (2015), Chapter 7: Order Flow Toxicity.
+"""
 import statistics
 import random
 import numpy as np
@@ -94,7 +109,7 @@ class TaskAdversary(BaseTradeTask):
         
         # Recalculate metrics for narrative
         leakage = False
-        guidance = "ℹ️ Market status: Stealth preserved. Patterns are sufficiently random."
+        guidance = "[OK] Stealth preserved. Rate patterns are sufficiently random (StdDev>0.005, |AutoCorr|<0.70)."
         
         if len(self.participation_history) >= 5:
             std_dev = statistics.stdev(self.participation_history)
@@ -108,10 +123,10 @@ class TaskAdversary(BaseTradeTask):
                 detector = "Uniformity" if is_uniform else "Periodic Pulse"
                 # Suggested rate shift (Actionable guidance)
                 suggested = 0.05 + (step_count % 3) * 0.05 
-                guidance = f"⚠️ ADVERSARY ALERT: HFT {detector} detector fired. Immediate action: Break the pattern! Target rate shift to {suggested:.2f}."
+                guidance = f"[DETECTED] HFT {detector} detector fired! IMMEDIATE ACTION: Change rate by +/-0.03. Target: {suggested:.2f}. Need StdDev>0.005 AND |AutoCorr|<0.70."
 
         return (
-            f"SITREP — Step {step_count}/{self.max_steps} ({progress:.1f}%) | "
+            f"SITREP -- Step {step_count}/{self.max_steps} ({progress:.1f}%) | "
             f"Inventory: {shares_remaining:,} shares left | "
             f"IS: {current_is:.2f} bps | {guidance}"
         )

@@ -9,7 +9,7 @@ class TradeExecGymEnv(gym.Env):
     Gymnasium wrapper for TradeExecGym MCP environment.
     Connects to the server via TradeExecClient.
     """
-    def __init__(self, base_url="http://localhost:7865", task_id="task1_twap_beater"):
+    def __init__(self, base_url="http://localhost:7860", task_id="task1_twap_beater"):
         super().__init__()
         self.client = TradeExecClient(base_url=base_url)
         self.task_id = task_id

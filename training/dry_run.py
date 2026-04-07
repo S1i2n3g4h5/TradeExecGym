@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dry_run.py — Pre-deploy Async Validation.
+dry_run.py -- Pre-deploy Async Validation.
 
 Starts the full HTTP stack validation tests before deploying
 to HF space to guarantee nothing breaks the OpenEnv schema.
@@ -9,6 +9,8 @@ to HF space to guarantee nothing breaks the OpenEnv schema.
 import argparse
 import asyncio
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='replace')
 
 import requests
 
@@ -25,15 +27,15 @@ def check_health(base_url: str, verbose: bool = False) -> bool:
     try:
         resp = requests.get(f"{base_url}/health", timeout=10)
         if resp.status_code == 200:
-            print(f"  ✅ /health → {resp.status_code}")
+            print(f"  [OK] /health -> {resp.status_code}")
             if verbose:
                 print(f"     {resp.json()}")
             return True
         else:
-            print(f"  ❌ /health → {resp.status_code}: {resp.text[:100]}")
+            print(f"  [FAIL] /health -> {resp.status_code}: {resp.text[:100]}")
             return False
     except Exception as e:
-        print(f"  ❌ /health failed: {e}")
+        print(f"  [FAIL] /health failed: {e}")
         return False
 
 async def run_episode(base_url: str, task_id: str, verbose: bool = False) -> dict:
@@ -70,20 +72,20 @@ async def run_episode(base_url: str, task_id: str, verbose: bool = False) -> dic
 
     except Exception as e:
         results["error"] = str(e)
-        print(f"  ❌ Episode Error: {e}")
+        print(f"  [FAIL] Episode Error: {e}")
 
     return results
 
 async def async_main():
     parser = argparse.ArgumentParser(description="TradeExecGym validation")
-    parser.add_argument("--url", default="http://localhost:7865", help="Server API URL")
+    parser.add_argument("--url", default="http://localhost:7860", help="Server API URL")
     parser.add_argument("--verbose", action="store_true", help="Print debug details")
     args = parser.parse_args()
     
     base_url = args.url.rstrip("/")
 
     print("=" * 60)
-    print("         TradeExecGym — Pre-Deploy Validation             ")
+    print("         TradeExecGym -- Pre-Deploy Validation             ")
     print("=" * 60)
     print(f"  URL: {base_url:<51} ")
     print("=" * 60 + "\n")
@@ -95,24 +97,24 @@ async def async_main():
     if check_health(base_url, verbose=args.verbose):
         passed += 1
     else:
-        print("  → Healthcheck failed. Ensure server is running.")
+        print("  -> Healthcheck failed. Ensure server is running.")
         sys.exit(1)
 
     print("\nCHECK 2: Task 1 Full Episode (task1_twap_beater)")
     res1 = await run_episode(base_url, "task1_twap_beater", verbose=args.verbose)
     if res1["success"]:
-        print(f"  ✅ Completed in {res1['steps_taken']} steps")
+        print(f"  [OK] Completed in {res1['steps_taken']} steps")
         print(f"     Final IS: {res1['final_is_bps']:.2f} bps")
         print(f"     Grader Score: {res1['grader_score']:.4f}")
         passed += 1
     else:
-        print(f"  ❌ Failed: {res1['error']}")
+        print(f"  [FAIL] Failed: {res1['error']}")
         failed += 1
 
     print("\nCHECK 3: Task 3 Volatile Episode (task3_volatile_execution)")
     res3 = await run_episode(base_url, "task3_volatile_execution", verbose=False)
     if res3["success"]:
-        print(f"  ✅ Completed in {res3['steps_taken']} steps")
+        print(f"  [OK] Completed in {res3['steps_taken']} steps")
         passed += 1
     else:
         failed += 1
@@ -121,7 +123,7 @@ async def async_main():
     r1 = await run_episode(base_url, "task1_twap_beater", verbose=False)
     r2 = await run_episode(base_url, "task1_twap_beater", verbose=False)
     if r1["success"] and r2["success"]:
-        print(f"  ✅ Validated two continuous runs.")
+        print(f"  [OK] Validated two continuous runs.")
         passed += 1
     else:
         failed += 1
@@ -129,7 +131,7 @@ async def async_main():
     print(f"\n{'='*50}\n  RESULTS: {passed} passed, {failed} failed\n{'='*50}")
     
     if failed == 0:
-        print("\n  🎉 Validation Passed")
+        print("\n  [DONE] Validation Passed")
         sys.exit(0)
     else:
         sys.exit(1)

@@ -1,3 +1,13 @@
+"""
+Task 2: VWAP Optimizer
+=======================
+Objective: Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
+Difficulty: Medium
+Total Shares: 250,000 | Max Steps: 60 | Arrival Price: $150.00
+Winning Strategy: Front-load open (rate 0.12-0.18), go light midday (0.02-0.05), surge close (0.15-0.25).
+Volume Weights: Open=1.6x, Midday=0.5x, Close=1.8x
+Grader: 50% IS quality vs AC Optimal, 30% completion, 20% baseline beating (TWAP+VWAP).
+"""
 from .base_task import BaseTradeTask
 
 class TaskVwapOptimizer(BaseTradeTask):
@@ -46,22 +56,23 @@ class TaskVwapOptimizer(BaseTradeTask):
         if p < 0.20:
             volume_window = "HIGH"
             session_hint = (
-                "📊 VOLUME SPIKE (Open): This is the highest-liquidity window. "
-                "Sell aggressively (rate 0.12–0.18) — VWAP rewards front-loading here."
+                "VOLUME SPIKE (Open, 1.6x ADV): Highest-liquidity window. "
+                "Volume weights: Open=1.6x, Midday=0.5x, Close=1.8x. "
+                "Sell aggressively (rate 0.12-0.18) -- VWAP rewards front-loading here."
             )
             target_completion = 0.30  # Should be ~30% done by end of open
         elif p < 0.80:
             volume_window = "LOW"
             session_hint = (
-                "📉 LOW VOLUME (Midday): Spreads are wide and impact is punishing. "
-                "Sell lightly (rate 0.02–0.05) — preserve inventory for the close surge."
+                "LOW VOLUME (Midday, 0.5x ADV): Spreads are wide and impact is punishing. "
+                "Sell lightly (rate 0.02-0.05) -- preserve inventory for the close surge (1.8x ADV)."
             )
             target_completion = 0.55  # Should be ~55% done by midday
         else:
             volume_window = "HIGH"
             session_hint = (
-                "📊 VOLUME SPIKE (Close): Final liquidity window is open. "
-                "Clear remaining inventory now (rate 0.15–0.25) — VWAP demands it."
+                "VOLUME SPIKE (Close, 1.8x ADV): Final liquidity window. "
+                "Clear remaining inventory now (rate 0.15-0.25) -- VWAP demands it."
             )
             target_completion = 1.00
 
@@ -69,31 +80,31 @@ class TaskVwapOptimizer(BaseTradeTask):
         actual_completion = 1.0 - (shares_remaining / self.total_shares)
         if actual_completion < target_completion - 0.10:
             pace_hint = (
-                f"⚠️  VWAP PACE: You're behind the volume curve "
+                f"[BEHIND PACE] You're behind the volume curve "
                 f"({actual_completion*100:.0f}% done, should be ~{target_completion*100:.0f}%). Accelerate!"
             )
         elif actual_completion > target_completion + 0.10 and volume_window == "LOW":
             pace_hint = (
-                f"⚠️  OVER-TRADING in low-volume midday ({actual_completion*100:.0f}% done). "
+                f"[OVER-TRADING] in low-volume midday ({actual_completion*100:.0f}% done). "
                 "Your IS will spike. Slow down and wait for the close."
             )
         else:
-            pace_hint = f"✅ On VWAP pace ({actual_completion*100:.0f}% done vs {target_completion*100:.0f}% target)."
+            pace_hint = f"[ON PACE] {actual_completion*100:.0f}% done vs {target_completion*100:.0f}% VWAP target."
 
         # IS quality hint
         vwap_benchmark = 20.0
         if current_is == 0.0:
-            is_hint = "⏳ Awaiting first fill."
+            is_hint = "[WAIT] Awaiting first fill."
         elif current_is < vwap_benchmark:
-            is_hint = f"✅ Beating VWAP benchmark ({current_is:.1f} bps < ~20 bps)."
+            is_hint = f"[BEATING VWAP] IS={current_is:.1f} bps < ~20 bps target."
         else:
-            is_hint = f"❌ IS ({current_is:.1f} bps) above VWAP target (~20 bps)."
+            is_hint = f"[LAGGING] IS={current_is:.1f} bps above VWAP target (~20 bps)."
 
         urgency = ""
         if steps_left <= int(self.max_steps * 0.15) and shares_remaining > 0:
             urgency = (
-                f"\n⚠️  DEADLINE RISK: {shares_remaining:,} shares remain with {steps_left} steps left "
-                f"({pace_needed:,.0f}/step). Push rate to 0.20+ to clear inventory!"
+                f"\n[DEADLINE RISK] {shares_remaining:,} shares remain with {steps_left} steps left "
+                f"({pace_needed:,.0f}/step needed). Push rate to 0.20+ to clear inventory!"
             )
 
         return (

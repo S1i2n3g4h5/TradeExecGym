@@ -2,6 +2,94 @@
 title: TradeExecGym
 emoji: 📈
 colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+license: mit
+app_port: 7860
+short_description: Smart Order Router RL Environment - OpenEnv Hackathon
+---
+
+# TradeExecGym — Smart Order Router RL Environment
+
+> **Meta x HuggingFace OpenEnv Hackathon Submission**
+> Institutional block trade execution with Almgren-Chriss market impact physics.
+
+---
+
+## Quick Start (3 Commands)
+
+```bash
+# 1. Start the environment server
+uvicorn server.app:app --host 0.0.0.0 --port 7860
+
+# 2. Run single-episode inference demo (Task 4: Adversarial HFT)
+OPENAI_API_KEY=your_key python inference.py
+
+# 3. Run heuristic baselines on Tasks 1-3 (no LLM needed)
+python baselines/run_baselines.py
+```
+
+### Docker (Evaluation Mode)
+```bash
+# Build
+docker build -t trade-exec-gym .
+
+# Run environment only (inference mode — no Gradio UI)
+docker run -e INFERENCE_MODE=true -p 7860:7860 trade-exec-gym
+
+# Then run inference against it
+OPENAI_API_KEY=your_key ENV_BASE_URL=http://localhost:7860 python inference.py
+```
+
+### OpenEnv Validate
+```bash
+openenv validate --config openenv.yaml
+```
+
+---
+
+## Architecture
+
+```
+inference.py  (single-episode demo, OPENAI_API_KEY)
+    |
+    v (async HTTP via MCPToolClient)
+client.py  (TradeExecClient)
+    |
+    v
+server/app.py  (FastAPI + OpenEnv create_app)
+    |
+    v
+server/trade_environment.py  (TradeExecEnvironment)
+    |-- tasks/task1_twap.py        [Easy:   100K shares, 30 steps]
+    |-- tasks/task2_vwap.py        [Medium: 250K shares, 60 steps]
+    |-- tasks/task3_volatile.py    [Hard:   400K shares, 90 steps, sigma=0.06]
+    |-- tasks/task4_adversary.py   [Expert: 600K shares, 120 steps, HFT detector]
+    |-- tasks/task5_deadline.py    [Extreme: 1M shares, 80 steps, 99.9% gate]
+    |-- env/price_model.py         [Almgren-Chriss GBM dynamics]
+    |-- env/venue_router.py        [Dark pool + toxic flow detection]
+    +-- env/reward.py              [3-component reward: dense + sparse + terminal]
+```
+
+---
+
+## Evaluation Rubric Alignment
+
+| Feature | Scoring Criterion | Weight |
+|---------|------------------|--------|
+| Almgren-Chriss price impact physics | Real-world utility | 30% |
+| 5-task curriculum (easy → extreme) | Task & grader quality | 25% |
+| Shadow baselines (same seed = fair comparison) | Environment design | 20% |
+| Typed Pydantic models, openenv validate | Code quality & spec | 15% |
+| Adversarial HFT dual-gate pattern detection | Creativity & novelty | 10% |
+
+---
+
+---
+title: TradeExecGym
+emoji: 📈
+colorFrom: green
 colorTo: gray
 sdk: docker
 app_port: 7860
@@ -185,7 +273,7 @@ TradeExecGym exposes **4 MCP tools** via its FastAPI + FastMCP backend. These ar
 ### `GET /health` — Health Check
 
 ```bash
-curl http://localhost:7865/health
+curl http://localhost:7860/health
 # → {"status": "healthy"}
 ```
 
@@ -373,7 +461,7 @@ python3 tests/validate_robustness.py --full
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                         TradeExecGym — System Map                          │
 ├───────────────────────────────────┬────────────────────────────────────────┤
-│  PORT 7860 — Gradio Dashboard     │  PORT 7865 — FastAPI / MCP Backend     │
+│  PORT 7860 — Gradio Dashboard     │  PORT 7860 — FastAPI / MCP Backend     │
 │  ─────────────────────────────    │  ─────────────────────────────────     │
 │  ui/app.py                        │  server/app.py  →  openenv.create_app  │
 │  ┌─────────────────────────────┐  │  ┌─────────────────────────────────┐   │
@@ -486,8 +574,8 @@ cd trade-exec-gym
 # 2. Install dependencies (fast, via uv)
 uv pip install -e .
 
-# 3. Run the OpenEnv backend server (port 7865, internal)
-uv run uvicorn server.app:app --host 0.0.0.0 --port 7865
+# 3. Run the OpenEnv backend server (port 7860, internal)
+uv run uvicorn server.app:app --host 0.0.0.0 --port 7860
 
 # 4. In a second terminal, run the Gradio dashboard (port 7860)
 uv run python ui/app.py --port 7860
@@ -672,7 +760,7 @@ uv pip install -e .   # uses pyproject.toml
 The container runs **two processes** via the Dockerfile `CMD`:
 
 ```
-Process 1: uvicorn server.app:app --port 7865   # Internal MCP backend
+Process 1: uvicorn server.app:app --port 7860   # Internal MCP backend
 Process 2: python ui/app.py --port 7860          # Public Gradio dashboard
 ```
 
@@ -682,7 +770,7 @@ Environment variables:
 |---|---|---|
 | `HF_TOKEN` | *(none)* | HuggingFace API key — enables LLM cognitive layer |
 | `MODEL_NAME` | `meta-llama/Meta-Llama-3-70B-Instruct` | LLM for inference |
-| `ENV_BASE_URL` | `http://localhost:7865` | Backend URL for inference script |
+| `ENV_BASE_URL` | `http://localhost:7860` | Backend URL for inference script |
 | `PORT` | `7860` | Primary public port (HF Spaces managed) |
 
 ---

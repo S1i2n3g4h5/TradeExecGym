@@ -1,16 +1,19 @@
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
 import os
 from stable_baselines3 import PPO
 from env.gym_wrapper import TradeExecGymEnv
 import numpy as np
 
 def run_eval(task_id):
-    print(f"\n📊 Evaluating Agent on {task_id}...")
+    print(f"\n[DATA] Evaluating Agent on {task_id}...")
     env = TradeExecGymEnv(task_id=task_id)
     
     # Check if model exists
     model_path = "models/grpo_agent.zip"
     if not os.path.exists(model_path):
-        print(f"❌ Error: Model not found at {model_path}")
+        print(f"[FAIL] Error: Model not found at {model_path}")
         return
         
     model = PPO.load(model_path)
@@ -26,7 +29,7 @@ def run_eval(task_id):
         total_reward += reward
         steps += 1
         
-    print(f"✅ Episode finished in {steps} steps. Total cumulative reward: {total_reward:.2f}")
+    print(f"[OK] Episode finished in {steps} steps. Total cumulative reward: {total_reward:.2f}")
 
 if __name__ == "__main__":
     tasks = ["task1_twap_beater", "task4_adversarial"]

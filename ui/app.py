@@ -6,6 +6,8 @@ Covers the technical rigor and 'LLM Observability' criteria for Meta OpenEnv.
 """
 import os
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='replace')
 import time
 import json
 import asyncio
@@ -23,6 +25,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from baselines.heuristic_agent import AlmgrenChrissHeuristic
 from typing import Optional
 from client import TradeExecClient
+
+ENV_BASE_URL = os.getenv('ENV_BASE_URL', 'http://localhost:7860')
 
 # ---------------------------------------------------------------------------
 # Model Loading
@@ -70,7 +74,7 @@ class UIState:
 
     async def start_session(self, display_name, seed=42):
         if self.client is None:
-            self.client = TradeExecClient(base_url="http://localhost:7865")
+            self.client = TradeExecClient(base_url=ENV_BASE_URL)
 
         task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
         try:
@@ -80,7 +84,7 @@ class UIState:
                 await self.client.close()
             except Exception:
                 pass
-            self.client = TradeExecClient(base_url="http://localhost:7865")
+            self.client = TradeExecClient(base_url=ENV_BASE_URL)
             obs = await self.client.reset(task_id=task_id, seed=int(seed))
 
         self.task_id = task_id
@@ -91,10 +95,10 @@ class UIState:
         try:
             state_text = await self.client.get_market_state()
             if state_text:
-                return f"✅ Session initialized: **{task_id}** (seed={seed})\n\n{state_text}"
+                return f"[OK] Session initialized: **{task_id}** (seed={seed})\n\n{state_text}"
         except Exception:
             pass
-        return f"✅ Session started: {task_id} (seed={seed})\n\nReady — click 'Execute Step' to begin trading."
+        return f"[OK] Session started: {task_id} (seed={seed})\n\nReady — click 'Execute Step' to begin trading."
 
     def get_summary(self):
         if not self.current_obs:
@@ -127,7 +131,7 @@ class UIState:
 
             return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.history
         except Exception as e:
-            return f"❌ Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, []
+            return f"[FAIL] Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, []
 
     def _parse_result(self, text):
         metrics = {
@@ -252,7 +256,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
         yield "### Error: HF_TOKEN is required for Live Eval.", None, [], "[ERROR] Missing Token"
         return
 
-    client = TradeExecClient(base_url="http://localhost:7865")
+    client = TradeExecClient(base_url=ENV_BASE_URL)
     llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://huggingface.co/v1/")
     heuristic = AlmgrenChrissHeuristic()
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
@@ -350,7 +354,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
 # ---------------------------------------------------------------------------
 async def run_auto_simulation(display_name, mode, seed=42):
     """Run an automated episode based on selected mode."""
-    client = TradeExecClient(base_url="http://localhost:7865")
+    client = TradeExecClient(base_url=ENV_BASE_URL)
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
 
     try:
@@ -457,7 +461,7 @@ async def run_auto_simulation(display_name, mode, seed=42):
         final_score = history[-1].get("score", 0) if history else 0
 
         summary_text = (
-            f"### ✅ Simulation Complete — {mode} on `{task_id}`\n\n"
+            f"### [OK] Simulation Complete — {mode} on `{task_id}`\n\n"
             f"| Metric | Value |\n|---|---|\n"
             f"| Steps Taken | {step} |\n"
             f"| Final IS | {final_is:.2f} bps |\n"
@@ -471,7 +475,7 @@ async def run_auto_simulation(display_name, mode, seed=42):
             await client.close()
         except Exception:
             pass
-        return f"### ❌ Simulation Failed\n\nError: {str(e)}", None, []
+        return f"### [FAIL] Simulation Failed\n\nError: {str(e)}", None, []
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +489,7 @@ state = UIState()
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── Reset & Base ── */
+/* -- Reset & Base -- */
 body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 .gradio-container {
     font-family: 'Inter', sans-serif !important;
@@ -494,7 +498,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
     background-color: transparent !important;
 }
 
-/* ── Hero Header ── */
+/* -- Hero Header -- */
 .hero-header {
     background: linear-gradient(160deg, #0d1b2e 0%, #0a0f1e 60%, #080d1a 100%);
     border: 1px solid rgba(16, 185, 129, 0.2);
@@ -525,7 +529,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
     pointer-events: none;
 }
 
-/* ── Status Pill ── */
+/* -- Status Pill -- */
 .top-pill {
     background: rgba(16, 185, 129, 0.1);
     color: #10b981;
@@ -539,7 +543,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
     text-transform: uppercase;
 }
 
-/* ── Tech Pills ── */
+/* -- Tech Pills -- */
 .tech-pill {
     background: rgba(255,255,255,0.04);
     color: #cbd5e1;
@@ -556,7 +560,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 }
 .tech-pill:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); }
 
-/* ── Section Cards ── */
+/* -- Section Cards -- */
 .card {
     background: #0d1525;
     border: 1px solid rgba(255,255,255,0.07);
@@ -567,7 +571,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 }
 .card:hover { border-color: rgba(16,185,129,0.2); }
 
-/* ── Info / Docs Sections ── */
+/* -- Info / Docs Sections -- */
 .info-section {
     background: #0d1525 !important;
     border: 1px solid rgba(255,255,255,0.07) !important;
@@ -637,7 +641,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 }
 .info-section tr:hover td { background: rgba(16,185,129,0.04) !important; color: #e2e8f0 !important; }
 
-/* ── Stat Cards ── */
+/* -- Stat Cards -- */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 18px 0; }
 .stat-card {
     background: linear-gradient(135deg, rgba(6,78,59,0.6), rgba(6,95,70,0.3));
@@ -651,7 +655,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 .stat-card .stat-val { font-size: 1.7rem; font-weight: 800; color: #6ee7b7; font-family: 'JetBrains Mono', monospace; }
 .stat-card .stat-lbl { font-size: 0.72rem; color: #6ee7b7; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 
-/* ── Task Strategy Cards ── */
+/* -- Task Strategy Cards -- */
 .task-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 .strategy-card {
     border-radius: 12px;
@@ -669,7 +673,7 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 .strategy-card .body { font-size: 0.87rem; line-height: 1.65; color: #cbd5e1; }
 .strategy-card .result { font-size: 0.78rem; margin-top: 12px; font-weight: 600; }
 
-/* ── Difficulty Badges ── */
+/* -- Difficulty Badges -- */
 .badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 700; margin-left: 8px; letter-spacing: 0.04em; }
 .badge-easy    { background: rgba(5,150,105,0.2); color: #34d399; border: 1px solid rgba(5,150,105,0.4); }
 .badge-medium  { background: rgba(217,119,6,0.2); color: #fbbf24; border: 1px solid rgba(217,119,6,0.4); }
@@ -677,17 +681,17 @@ body { background-color: #080d1a !important; color: #e2e8f0 !important; }
 .badge-vhard   { background: rgba(124,58,237,0.2); color: #c4b5fd; border: 1px solid rgba(124,58,237,0.4); }
 .badge-extreme { background: rgba(255,255,255,0.05); color: #94a3b8; border: 1px solid rgba(255,255,255,0.15); }
 
-/* ── Divider ── */
+/* -- Divider -- */
 .section-divider {
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(16,185,129,0.3), transparent);
     margin: 28px 0;
 }
 
-/* ── Result Box ── */
+/* -- Result Box -- */
 .result-box { border: 1px solid rgba(16,185,129,0.3); padding: 12px 16px; border-radius: 10px; background: rgba(16,185,129,0.04); }
 
-/* ── Gradio Tab overrides ── */
+/* -- Gradio Tab overrides -- */
 .tab-nav button { font-weight: 600 !important; letter-spacing: 0.02em !important; }
 """
 
@@ -737,7 +741,7 @@ def _load_robustness_report():
         is_pass = "PASS" in overall
         color = "#10b981" if is_pass else "#f59e0b"
         border = "rgba(16,185,129,0.35)" if is_pass else "rgba(245,158,11,0.35)"
-        icon = "✅" if is_pass else "⚠️"
+        icon = "[OK]" if is_pass else "[WARN]"
         return f"""
 <div style="background:linear-gradient(135deg,rgba(6,78,59,0.4),rgba(8,13,26,0.9));border:1px solid {border};border-radius:14px;padding:22px 26px;margin-bottom:24px;">
   <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;">
@@ -772,7 +776,7 @@ def _load_robustness_report():
   </div>
 </div>"""
     except Exception as e:
-        return f'<div style="color:#f87171;padding:14px;border:1px solid rgba(248,113,113,0.3);border-radius:10px;">⚠️ Could not load robustness report: {e}</div>'
+        return f'<div style="color:#f87171;padding:14px;border:1px solid rgba(248,113,113,0.3);border-radius:10px;">[WARN] Could not load robustness report: {e}</div>'
 
 
 # ---------------------------------------------------------------------------
@@ -783,7 +787,7 @@ def build_gui():
         title="TradeExecGym — Institutional SOR Dashboard",
     ) as demo:
 
-        # ── Hero Banner ──────────────────────────────────────────────────────
+        # -- Hero Banner ------------------------------------------------------
         gr.HTML("""
         <div class="hero-header">
             <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;z-index:10;">
@@ -816,9 +820,9 @@ def build_gui():
 
         with gr.Tabs():
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 1 — Auto Simulation
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("⚡ Auto Simulation"):
                 model_status = (
                     f"🟢 RL Agent loaded: `{MODEL_PATH}` (PPO trained on TradeExecGym)" if _loaded_agent
@@ -850,9 +854,9 @@ def build_gui():
                     outputs=[auto_summary, auto_plot, auto_json]
                 )
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 2 — Live Model Evaluation
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("🔬 Live Model Eval"):
                 with gr.Column(elem_classes=["info-section"]):
                     gr.Markdown("### Test any LLM against the OpenEnv Standard")
@@ -881,9 +885,9 @@ def build_gui():
                     outputs=[live_status, live_plot, live_json, live_logs]
                 )
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 3 — Manual Challenge
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("🎮 Manual Challenge"):
                 with gr.Column(elem_classes=["info-section"]):
                     gr.Markdown(
@@ -927,9 +931,9 @@ def build_gui():
                     outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json]
                 )
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 4 — Strategy Guide
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("🎯 Strategy Guide"):
                 gr.HTML("""
                 <div style="text-align:center;padding:8px 0 28px;">
@@ -958,12 +962,12 @@ def build_gui():
                         <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#f87171;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🐣 Naive Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade the same amount every step. Set <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fca5a5;">rate=0.033</code> all 30 steps and hope for the best.</div>
-                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">❌ IS ≈ 25 bps · Score ≤ 0.50</div>
+                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">[FAIL] IS ≈ 25 bps · Score ≤ 0.50</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🧠 Expert Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Adjust rate dynamically based on time remaining. Divide remaining shares by steps left each step.</div>
-                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">✅ IS ≈ 18–22 bps · Score ≈ 0.70–0.80</div>
+                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">[OK] IS ≈ 18–22 bps · Score ≈ 0.70–0.80</div>
                         </div>
                         <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px;">
                             <div style="color:#10b981;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🏆 Winning Secret</div>
@@ -990,12 +994,12 @@ def build_gui():
                         <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#f87171;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🐣 Naive Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade flat at <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fca5a5;">rate=0.017</code> across all 60 steps. Ignore the intraday volume rhythm entirely.</div>
-                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">❌ Midday impact destroys IS · Score ≤ 0.45</div>
+                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">[FAIL] Midday impact destroys IS · Score ≤ 0.45</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🧠 Expert Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Use a two-bucket model: high rate at open/close, low rate midday. Roughly track the volume ratio signal.</div>
-                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">✅ IS ≈ 18–22 bps · Score ≈ 0.72–0.82</div>
+                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">[OK] IS ≈ 18–22 bps · Score ≈ 0.72–0.82</div>
                         </div>
                         <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px;">
                             <div style="color:#10b981;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🏆 Winning Secret</div>
@@ -1022,12 +1026,12 @@ def build_gui():
                         <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#f87171;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🐣 Naive Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade aggressively on the lit NASDAQ venue. Ignore the dark pool. Keep <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fca5a5;">rate=0.10+</code> all steps.</div>
-                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">❌ 3× volatility → 3× impact · IS 60–90 bps · Score ≤ 0.30</div>
+                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">[FAIL] 3× volatility -> 3× impact · IS 60–90 bps · Score ≤ 0.30</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🧠 Expert Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade smaller on lit venues. Use dark pool occasionally. Keep rate low (0.03–0.06) to limit permanent impact.</div>
-                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">✅ IS ≈ 30–45 bps · Score ≈ 0.60–0.72</div>
+                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">[OK] IS ≈ 30–45 bps · Score ≈ 0.60–0.72</div>
                         </div>
                         <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px;">
                             <div style="color:#10b981;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🏆 Winning Secret</div>
@@ -1054,12 +1058,12 @@ def build_gui():
                         <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#f87171;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🐣 Naive Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade at constant <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fca5a5;">rate=0.05</code> every step, or alternate 0.05/0.15 in a repeating pattern.</div>
-                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">❌ HFT fires every step · 50 bps penalty × 100 steps · Score ≈ 0.07</div>
+                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">[FAIL] HFT fires every step · 50 bps penalty × 100 steps · Score ≈ 0.07</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🧠 Expert Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Vary rate unpredictably. Watch for ADVERSARY ALERT in the narrative and immediately change rate when triggered.</div>
-                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">✅ IS ≈ 30–50 bps · Score ≈ 0.55–0.65</div>
+                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">[OK] IS ≈ 30–50 bps · Score ≈ 0.55–0.65</div>
                         </div>
                         <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px;">
                             <div style="color:#10b981;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🏆 Winning Secret</div>
@@ -1086,12 +1090,12 @@ def build_gui():
                         <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#f87171;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🐣 Naive Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Focus on low IS. Trade passively (<code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fca5a5;">rate=0.03</code>) to minimize slippage. Miss the deadline.</div>
-                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">❌ Gate missed → Score = 0.00 regardless of IS</div>
+                            <div style="color:#f87171;font-size:0.78rem;margin-top:12px;font-weight:600;">[FAIL] Gate missed -> Score = 0.00 regardless of IS</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:18px;">
                             <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🧠 Expert Approach</div>
                             <div style="color:#94a3b8;font-size:0.87rem;line-height:1.65;">Trade aggressively at <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:#fcd34d;">rate=0.25</code> throughout. Complete the order, accept mediocre IS.</div>
-                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">✅ Gate cleared · IS ≈ 60–80 bps · Score ≈ 0.50–0.60</div>
+                            <div style="color:#fbbf24;font-size:0.78rem;margin-top:12px;font-weight:600;">[OK] Gate cleared · IS ≈ 60–80 bps · Score ≈ 0.50–0.60</div>
                         </div>
                         <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px;">
                             <div style="color:#10b981;font-size:0.7rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">🏆 Winning Secret</div>
@@ -1101,9 +1105,9 @@ def build_gui():
                     </div>
                     """)
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 5 — Project & Environment Info
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("📖 Environment Info"):
                 with gr.Column(elem_classes=["info-section"]):
                     gr.HTML(_load_robustness_report())
@@ -1163,9 +1167,9 @@ that makes agents solve it — exactly as real hedge fund Smart Order Routers do
 Every step runs three simultaneous calculations. No random walks, no fake data:
 
 ```
-1. GBM Drift          →  ΔS = S · exp((μ - 0.5σ²)·Δt + σ·√Δt·ε)   ε ~ N(0,1)
-2. Permanent Impact   →  Δprice_perm = γ · participation_rate         (shifts mid-price permanently)
-3. Temporary Impact   →  Δprice_temp = η · participation_rate         (affects fill price only)
+1. GBM Drift          ->  ΔS = S · exp((μ - 0.5σ²)·Δt + σ·√Δt·ε)   ε ~ N(0,1)
+2. Permanent Impact   ->  Δprice_perm = γ · participation_rate         (shifts mid-price permanently)
+3. Temporary Impact   ->  Δprice_temp = η · participation_rate         (affects fill price only)
 ```
 
 This is the **Almgren-Chriss (2000)** model — the same framework used by Goldman Sachs, Citadel,
@@ -1198,20 +1202,20 @@ If it drops below `0.005` (too uniform), the HFT bot front-runs you and applies 
 
 | Task | Avg IS ↓ | Grader Score ↑ | vs TWAP |
 |---|---|---|---|
-| Task 1: TWAP Beater | 18.4 bps | **0.91** | ✅ +6.1 bps |
-| Task 2: VWAP Optimizer | 15.2 bps | **0.86** | ✅ +9.3 bps |
-| Task 3: Volatile Execution | 38.7 bps | **0.79** | ✅ +4.2 bps |
-| Task 4: Adversarial HFT | 52.3 bps | **0.72** | ✅ +2.8 bps |
-| Task 5: Deadline Cliff | 84.1 bps | **0.66** | ✅ +1.1 bps |
+| Task 1: TWAP Beater | 18.4 bps | **0.91** | [OK] +6.1 bps |
+| Task 2: VWAP Optimizer | 15.2 bps | **0.86** | [OK] +9.3 bps |
+| Task 3: Volatile Execution | 38.7 bps | **0.79** | [OK] +4.2 bps |
+| Task 4: Adversarial HFT | 52.3 bps | **0.72** | [OK] +2.8 bps |
+| Task 5: Deadline Cliff | 84.1 bps | **0.66** | [OK] +1.1 bps |
 
 ---
 
 ## Quick Start
 
 ```bash
-# Terminal 1: Backend MCP server (port 7865)
+# Terminal 1: Backend MCP server (port 7860)
 uv pip install -e .
-uvicorn server.app:app --host 0.0.0.0 --port 7865
+uvicorn server.app:app --host 0.0.0.0 --port 7860
 
 # Terminal 2: Gradio dashboard (port 7860)
 python3 ui/app.py --port 7860
@@ -1235,28 +1239,28 @@ docker run -p 7860:7860 -e HF_TOKEN=hf_xxx trade-exec-gym
 
 ```
 trade-exec-gym/
-├── server/
-│   ├── app.py                 ← OpenEnv create_app() entry point (port 7865)
-│   └── trade_environment.py  ← MCPEnvironment: 4 tools + episode state machine
-├── env/
-│   ├── price_model.py         ← Almgren-Chriss GBM price simulator
-│   ├── venue_router.py        ← Dark pool + NASDAQ lit venue routing
-│   └── reward.py              ← 3-component IS reward function
-├── tasks/                     ← 5 task configs + factory registry
-├── baselines/                 ← TWAP, VWAP, AC-Optimal, AlmgrenChrissHeuristic agents
-├── training/                  ← PPO/GRPO training scripts
-├── tests/                     ← 24-test pytest validation suite
-├── ui/app.py                  ← This Gradio dashboard (port 7860)
-├── client.py                  ← Async httpx SDK (TradeExecClient)
-├── inference.py               ← OpenEnv compliance inference runner
-├── openenv.yaml               ← OpenEnv manifest (spec_version: 1)
-└── pyproject.toml             ← Dependencies + build config
+├-- server/
+│   ├-- app.py                 ← OpenEnv create_app() entry point (port 7860)
+│   └-- trade_environment.py  ← MCPEnvironment: 4 tools + episode state machine
+├-- env/
+│   ├-- price_model.py         ← Almgren-Chriss GBM price simulator
+│   ├-- venue_router.py        ← Dark pool + NASDAQ lit venue routing
+│   └-- reward.py              ← 3-component IS reward function
+├-- tasks/                     ← 5 task configs + factory registry
+├-- baselines/                 ← TWAP, VWAP, AC-Optimal, AlmgrenChrissHeuristic agents
+├-- training/                  ← PPO/GRPO training scripts
+├-- tests/                     ← 24-test pytest validation suite
+├-- ui/app.py                  ← This Gradio dashboard (port 7860)
+├-- client.py                  ← Async httpx SDK (TradeExecClient)
+├-- inference.py               ← OpenEnv compliance inference runner
+├-- openenv.yaml               ← OpenEnv manifest (spec_version: 1)
+└-- pyproject.toml             ← Dependencies + build config
 ```
 """, elem_classes=["info-section"])
 
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             # Tab 6 — Architecture & API
-            # ═══════════════════════════════════════════════════════════════
+            # ===============================================================
             with gr.TabItem("🏗️ Architecture & API"):
                 gr.Markdown("""
 ## How Agents Connect
@@ -1269,18 +1273,18 @@ Both tool-calling LLMs and RL policy networks use identical endpoints.
 +----------------------------------------------------------------------+
 |                     TradeExecGym — System Map                        |
 +--------------------------+-------------------------------------------+
-|  PORT 7860  (Public)     |  PORT 7865  (Internal)                    |
+|  PORT 7860  (Public)     |  PORT 7860  (Internal)                    |
 |  Gradio Dashboard        |  FastAPI + FastMCP Backend                |
-|  ui/app.py               |  server/app.py → openenv.create_app()    |
+|  ui/app.py               |  server/app.py -> openenv.create_app()    |
 |                          |                                           |
-|  ┌──────────────────┐    |  ┌───────────────────────────────────┐   |
+|  ┌------------------┐    |  ┌-----------------------------------┐   |
 |  │ Auto Simulation  │    |  │  TradeExecEnvironment              │   |
-|  │ Live LLM Eval    │◄───+──│  (MCPEnvironment subclass)        │   |
-|  │ Manual Challenge │    |  │  → env/price_model.py (GBM)       │   |
-|  │ Info / Arch Tabs │    |  │  → env/venue_router.py            │   |
-|  └──────────────────┘    |  │  → env/reward.py (IS grader)     │   |
-|  TradeExecClient         |  │  → tasks/ (5 task configs)        │   |
-|  (httpx async) ──────────+─►│                                   │   |
+|  │ Live LLM Eval    │◄---+--│  (MCPEnvironment subclass)        │   |
+|  │ Manual Challenge │    |  │  -> env/price_model.py (GBM)       │   |
+|  │ Info / Arch Tabs │    |  │  -> env/venue_router.py            │   |
+|  └------------------┘    |  │  -> env/reward.py (IS grader)     │   |
+|  TradeExecClient         |  │  -> tasks/ (5 task configs)        │   |
+|  (httpx async) ----------+-►│                                   │   |
 +--------------------------+-------------------------------------------+
 ```
 
@@ -1292,26 +1296,26 @@ All tools are callable via HTTP REST. Async wrappers are available in `client.py
 
 ### `GET /health` — Liveness Check
 ```bash
-curl http://localhost:7865/health
+curl http://localhost:7860/health
 # {"status": "healthy"}
 ```
 
 ### `POST /reset` — Initialize Episode
 ```json
-POST http://localhost:7865/reset
+POST http://localhost:7860/reset
 { "task_id": "task1_twap_beater", "seed": 42 }
 ```
 Returns `{"observation": {}, "reward": null, "done": false}`
 
 ### `POST /step` — Execute Action
 ```json
-POST http://localhost:7865/step
+POST http://localhost:7860/step
 { "tool_name": "execute_trade", "tool_input": {"participation_rate": 0.05} }
 ```
 
 ### `GET /state` — Current State Snapshot
 ```bash
-curl http://localhost:7865/state
+curl http://localhost:7860/state
 ```
 
 ### `POST /mcp` — MCP Protocol Endpoint
@@ -1325,7 +1329,7 @@ For MCP-native tool-calling clients.
 Returns a natural-language + structured snapshot designed for LLM chain-of-thought:
 ```
 MARKET STATE — Step 12/30
-───────────────────────────────────────────
+-------------------------------------------
 NARRATIVE: Volume is spiking at the open.
 
 INVENTORY
@@ -1336,7 +1340,7 @@ PRICES
   Mid Price: $150.4821 | Arrival: $150.0000 | Spread: 5.5 bps
 
 PERFORMANCE  (lower IS = better)
-  Your IS:  18.32 bps  ✅ Beating TWAP by 6.1 bps
+  Your IS:  18.32 bps  [OK] Beating TWAP by 6.1 bps
   TWAP IS:  24.44 bps  | VWAP IS: 19.55 bps
 ```
 
@@ -1425,7 +1429,7 @@ The **Grader Score** (0.0–1.0) is computed separately by each task's grader an
 |---|---|---|
 | `HF_TOKEN` | *(none)* | Enables LLM cognitive layer in inference |
 | `MODEL_NAME` | `meta-llama/Meta-Llama-3-70B-Instruct` | LLM used for hybrid agent |
-| `ENV_BASE_URL` | `http://localhost:7865` | Backend URL for inference script |
+| `ENV_BASE_URL` | `http://localhost:7860` | Backend URL for inference script |
 | `PORT` | `7860` | Primary public port (HF Spaces managed) |
 
 ---
@@ -1442,6 +1446,22 @@ Run `python3 inference.py` to generate this output (logs to stdout).
 """, elem_classes=["info-section"])
 
     return demo
+
+
+def build_demo(env_base_url: str = None):
+    """Build the Gradio demo for mounting inside FastAPI at /ui sub-path.
+
+    Called by server/app.py to mount at /ui.
+    When mounted, the demo connects to the same FastAPI server (no cross-port).
+
+    Args:
+        env_base_url: Base URL of the environment server.
+                      Defaults to ENV_BASE_URL env var or http://localhost:7860.
+    """
+    global ENV_BASE_URL
+    if env_base_url:
+        ENV_BASE_URL = env_base_url
+    return build_gui()
 
 
 if __name__ == "__main__":

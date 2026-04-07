@@ -1,30 +1,138 @@
-# OpenEnv Server Manifest
+# OpenEnv Server Manifest — TradeExecGym
+# Smart Order Router RL Environment
+# Compliant with OpenEnv Spec v1
 spec_version: "1"
+
 environment:
   name: "trade_exec_gym"
-  description: "Smart Order Router RL Environment. Execute block trades minimizing Implementation Shortfall."
+  description: >
+    Smart Order Router RL Environment. Agents execute large block trades while
+    minimizing Implementation Shortfall (IS) using Almgren-Chriss market-impact
+    physics, dark-pool routing, and adversarial HFT pattern detection.
+    Grounded in real institutional trading microstructure.
   version: "1.0.0"
+  domain: "finance/trading"
+  tags: ["trading", "market-microstructure", "almgren-chriss", "dark-pool", "hft"]
 
+# Server configuration
 runtime: "fastapi"
 server_module: "server.app"
 server_app: "app"
+entry_point: "server.app:app"  # runs on port 7860 (HF Spaces public port)
 
-# Tiers of tasks evaluated over the course of the episode
-tasks:
-  - id: "task1_twap_beater"
-    description: "Execute 100K shares. Beat TWAP (equal slicing). Easy difficulty."
-  - id: "task2_vwap_optimizer"
-    description: "Execute 250K shares tracking market volume profiles. Medium."
-  - id: "task3_volatile_execution"
-    description: "Execute 400K shares under 3x volatility with dark pool access. Hard."
-  - id: "task4_adversarial"
-    description: "HFT adversary exploiting predictable passive patterns. Very Hard."
-  - id: "task5_deadline_pressure"
-    description: "1M shares, huge penalty for unexecuted shares. Extreme."
+# Observation space — 5 numeric fields returned by get_market_state()
+# Full structured observation also available via environment state property
+observation_space:
+  type: object
+  description: "Numeric market state snapshot at each step"
+  properties:
+    price_norm:
+      type: float
+      range: [0.5, 2.0]
+      description: "Current mid-price normalized by arrival price (1.0 = no drift)"
+    progress_pct:
+      type: float
+      range: [0.0, 1.0]
+      description: "Fraction of episode steps elapsed (0=start, 1=done)"
+    remaining_pct:
+      type: float
+      range: [0.0, 1.0]
+      description: "Fraction of shares still to execute (0=all filled)"
+    vol_ratio:
+      type: float
+      range: [0.0, 5.0]
+      description: "Intraday volume multiplier (1.0=normal, 1.6=open, 1.8=close, 0.5=midday)"
+    current_is_bps:
+      type: float
+      range: [0.0, 200.0]
+      description: "Implementation Shortfall in basis points (lower is better)"
 
-actions:
-  execute_trade:
+# Action space — primary action for every step
+action_space:
+  type: object
+  description: "Trade execution parameters for one time step"
+  properties:
     participation_rate:
       type: float
       range: [0.0, 0.25]
-      default: 0.05   # TWAP-equivalent, not 0.0
+      default: 0.05
+      description: >
+        Fraction of average daily volume (ADV) to trade this step.
+        0.0 = no shares traded. 0.25 = maximum (25% of ADV per step).
+        TWAP equivalent ≈ 0.05. Clamped to [0.0, 0.25] automatically.
+    use_dark_pool:
+      type: bool
+      default: false
+      description: "Route a portion of the order via dark pool (Task 3 recommended)"
+    dark_pool_fraction:
+      type: float
+      range: [0.0, 1.0]
+      default: 0.0
+      description: "Fraction of order to route dark (0.3 recommended when use_dark_pool=true)"
+
+# Reward function specification
+reward_range: [-2.0, 2.0]
+reward_description: >
+  3-component reward signal:
+  1. Dense (per-step): 0.1 * (TWAP_IS - agent_IS) — positive when beating TWAP
+  2. Sparse (milestone): +0.2 per 25% inventory completion threshold crossed
+  3. Terminal: +1.0 for >95% completion; +0.5 excellence bonus for beating AC Optimal
+
+# Task definitions — 5 tasks with progressive difficulty
+tasks:
+  - id: "task1_twap_beater"
+    description: >
+      Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
+      Exploit intraday volume patterns: surge at open/close, reduce midday.
+    difficulty: easy
+    max_episode_steps: 30
+    total_shares: 100000
+    target_is_bps: 25.0
+    elite_is_bps: 14.0
+    scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
+
+  - id: "task2_vwap_optimizer"
+    description: >
+      Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
+      Beat VWAP benchmark by front-loading at open and back-loading at close.
+    difficulty: medium
+    max_episode_steps: 60
+    total_shares: 250000
+    target_is_bps: 20.0
+    elite_is_bps: 14.0
+    scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
+
+  - id: "task3_volatile_execution"
+    description: >
+      Buy 400,000 shares under 3x normal volatility (sigma=0.06).
+      Use dark pool routing (dark_pool_fraction=0.3) to bypass lit-venue impact.
+    difficulty: hard
+    max_episode_steps: 90
+    total_shares: 400000
+    target_is_bps: 30.0
+    elite_is_bps: 14.0
+    scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
+
+  - id: "task4_adversarial"
+    description: >
+      Sell 600,000 shares while an HFT adversary exploits predictable patterns.
+      Jitter participation rates to avoid dual-gate detection (StdDev + Autocorrelation).
+      Expert difficulty. 15 bps penalty per detected step.
+    difficulty: expert
+    max_episode_steps: 120
+    total_shares: 600000
+    target_is_bps: 35.0
+    elite_is_bps: 20.0
+    scoring_criteria: "50% IS quality vs AC Optimal, 30% completion, 20% baseline beating"
+
+  - id: "task5_deadline_pressure"
+    description: >
+      Buy 1,000,000 shares in exactly 80 steps. Completion is mandatory.
+      Score = 0.0 unless >=99.9% of shares are filled. No partial credit.
+      Tension: trading too fast causes high IS; trading too slow risks 0.0 penalty.
+    difficulty: extreme
+    max_episode_steps: 80
+    total_shares: 1000000
+    target_is_bps: 40.0
+    elite_is_bps: 20.0
+    scoring_criteria: "Hard gate: <99.9% completion = score*0.15. Above gate: same 50/30/20 formula."

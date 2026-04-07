@@ -1,10 +1,13 @@
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
 import asyncio
 import numpy as np
 import random
 from client import TradeExecClient
 
 async def run_policy(name, policy_type="uniform"):
-    async with TradeExecClient(base_url="http://localhost:7865") as client:
+    async with TradeExecClient(base_url="http://localhost:7860") as client:
         obs = await client.reset(task_id="task4_adversarial", seed=42)
         total_penalized_steps = 0
         
@@ -23,7 +26,7 @@ async def run_policy(name, policy_type="uniform"):
             
             result = await client.execute_trade(participation_rate=rate)
             
-            if "⚠️ ADVERSARY" in result or "detector fired" in result:
+            if "[WARN] ADVERSARY" in result or "detector fired" in result:
                 total_penalized_steps += 1
                 
             if "EPISODE COMPLETE" in result:
@@ -40,7 +43,7 @@ async def run_policy(name, policy_type="uniform"):
 
 async def main():
     print("="*60)
-    print(" TASK 4 SKILL GRADIENT ANALYSIS — PATTERN BREAKING PROOF")
+    print(" TASK 4 SKILL GRADIENT ANALYSIS -- PATTERN BREAKING PROOF")
     print("="*60)
     print(f"{'Strategy':<20} {'Final IS':>10} {'Score':>10} {'Penalties':>10}")
     print("-" * 60)
