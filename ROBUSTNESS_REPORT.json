@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-06T18:48:25.368867+00:00",
+  "timestamp": "2026-04-06T22:25:04.142938+00:00",
   "version": "1.0.0",
   "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
   "layer0_environment_boot": {
@@ -14,11 +14,11 @@
     "status": "PASS"
   },
   "layer1_unit_tests": {
-    "passed": 24,
+    "passed": 40,
     "failed": 0,
     "errors": 0,
     "status": "PASS",
-    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 24 items\n\ntests/test_adversary_advanced.py .....                                   [ 20%]\ntests/test_physics.py ...                                                [ 33%]\ntests/test_reward.py ..                                                  [ 41%]\ntests/test_tasks.py ............                                         [ 91%]\ntests/test_venue_router.py ..                                            [100%]\n\n============================== 24 passed in 5.40s ==============================\n"
+    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 40 items\n\ntests/test_adversary_advanced.py .....                                   [ 12%]\ntests/test_edge_cases.py ..........                                      [ 37%]\ntests/test_physics.py ......                                             [ 52%]\ntests/test_reward.py ..                                                  [ 57%]\ntests/test_tasks.py ............                                         [ 87%]\ntests/test_venue_router.py .....                                         [100%]\n\n============================== 40 passed in 5.39s ==============================\n"
   },
   "layer2_baseline_scores": {
     "scores": {
@@ -69,6 +69,16 @@
     "monotonic_ordering": true,
     "interpretation": "Lower IS bps = better execution. Random > TWAP > AC Optimal confirms skill gradient.",
     "status": "PASS"
+  },
+  "performance_profiling": {
+    "reset_time_ms": 0.71,
+    "avg_step_time_ms": 0.025,
+    "reset_threshold_ms": 200.0,
+    "step_threshold_ms": 10.0,
+    "reset_pass": true,
+    "step_pass": true,
+    "status": "PASS",
+    "note": "Baseline cache runs 3 full simulations (TWAP/VWAP/AC) = 360 physics steps at reset"
   },
   "determinism_check": {
     "seed42_run1_is": 0.648817,

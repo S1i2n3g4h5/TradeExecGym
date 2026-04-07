@@ -94,7 +94,8 @@ def run_layer1_unit_tests() -> dict:
     """Run the full pytest suite and return a structured result."""
     print("\n[Layer 1] Running unit test suite (pytest)...")
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-q"],
+        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-q", 
+         "--ignore=tests/validate_robustness.py", "--ignore=tests/phase1_validation.py"],
         capture_output=True,
         text=True,
         cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -209,6 +210,8 @@ def run_layer3_skill_gradient() -> dict:
 
     - Random agent:   uniformly samples participation_rate ∈ [0.01, 0.25] each step.
                       Expected to produce the worst IS due to volatility-unaware sizing.
+                      **CRITICAL**: We seed the random agent (pyrandom.seed(999)) BEFORE
+                      env creation to ensure this test is deterministic and reproducible.
     - TWAP strategy:  pre-calculated by the environment's shadow baseline on the SAME seed.
                       Guaranteed fair comparison — identical price path.
     - AC Optimal:     Almgren-Chriss (2000) mathematically optimal schedule, also pre-
@@ -221,11 +224,14 @@ def run_layer3_skill_gradient() -> dict:
     """
     print("\n[Layer 3] Verifying skill gradient: Random < TWAP < AC-Optimal...")
     try:
-        from server.trade_environment import TradeExecEnvironment
         import random as pyrandom
-
-        # Use a fixed seed so random agent results are reproducible across runs
+        
+        # CRITICAL: Seed the random agent BEFORE environment creation to ensure
+        # deterministic, reproducible results across validation runs.
+        # Without this, the random agent's IS would vary, making regression testing impossible.
         pyrandom.seed(999)
+        
+        from server.trade_environment import TradeExecEnvironment
         env = TradeExecEnvironment()
         env.reset(seed=123, task_id="task1_twap_beater")
 
@@ -390,6 +396,67 @@ def run_layer4_openenv_compliance(base_url: str = "http://localhost:7865") -> di
 # Determinism Check (bonus)
 # ──────────────────────────────────────────────────────────────────────────────
 
+def run_performance_profiling() -> dict:
+    """
+    Profile baseline cache performance to ensure reset() is fast enough for RL training.
+    
+    The baseline cache (_calculate_real_baselines) runs 3 full simulations at reset:
+    - TWAP trajectory (120 steps)
+    - VWAP trajectory (120 steps)  
+    - AC Optimal trajectory (120 steps)
+    
+    This is 360 total physics steps. We verify this overhead is < 200ms to ensure
+    the environment is suitable for high-throughput RL training loops.
+    """
+    print("\n[Performance] Profiling baseline cache overhead...")
+    try:
+        from server.trade_environment import TradeExecEnvironment
+        import time
+        
+        env = TradeExecEnvironment()
+        
+        # Measure reset time (includes baseline cache calculation)
+        start = time.perf_counter()
+        env.reset(seed=42, task_id="task1_twap_beater")
+        reset_time_ms = (time.perf_counter() - start) * 1000
+        
+        # Measure single step time
+        step_times = []
+        for _ in range(10):
+            start = time.perf_counter()
+            env.execute_trade(participation_rate=0.05)
+            step_times.append((time.perf_counter() - start) * 1000)
+        
+        avg_step_time_ms = sum(step_times) / len(step_times)
+        
+        # Performance thresholds
+        reset_threshold_ms = 200.0  # Baseline cache should be < 200ms
+        step_threshold_ms = 10.0    # Single step should be < 10ms
+        
+        reset_pass = reset_time_ms < reset_threshold_ms
+        step_pass = avg_step_time_ms < step_threshold_ms
+        
+        print(f"  → Reset time (with baseline cache): {reset_time_ms:.2f} ms "
+              f"({'✅ PASS' if reset_pass else '❌ SLOW'} — threshold: {reset_threshold_ms} ms)")
+        print(f"  → Average step time: {avg_step_time_ms:.3f} ms "
+              f"({'✅ PASS' if step_pass else '❌ SLOW'} — threshold: {step_threshold_ms} ms)")
+        
+        return {
+            "reset_time_ms": round(reset_time_ms, 2),
+            "avg_step_time_ms": round(avg_step_time_ms, 3),
+            "reset_threshold_ms": reset_threshold_ms,
+            "step_threshold_ms": step_threshold_ms,
+            "reset_pass": reset_pass,
+            "step_pass": step_pass,
+            "status": "PASS" if (reset_pass and step_pass) else "SLOW",
+            "note": "Baseline cache runs 3 full simulations (TWAP/VWAP/AC) = 360 physics steps at reset"
+        }
+    
+    except Exception as e:
+        print(f"  → ERROR: {e}")
+        return {"status": "ERROR", "error": str(e)}
+
+
 def run_determinism_check() -> dict:
     """Verify that same seed produces identical IS values across two episode runs."""
     print("\n[Bonus] Determinism check (same seed → same result)...")
@@ -476,6 +543,9 @@ Examples:
 
     # Layer 3: Skill gradient
     report["layer3_skill_gradient"] = run_layer3_skill_gradient()
+
+    # Performance profiling
+    report["performance_profiling"] = run_performance_profiling()
 
     # Determinism bonus
     report["determinism_check"] = run_determinism_check()
