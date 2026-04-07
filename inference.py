@@ -67,19 +67,11 @@ from baselines.heuristic_agent import AlmgrenChrissHeuristic
 # OpenAI client is used for all LLM calls (openai-compatible API).
 # API_KEY is accepted as an alias for HF_TOKEN (per reference script pattern).
 # ==============================================================================
+# Variables required by meta validator
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
-HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
-API_KEY = HF_TOKEN  # alias used by OpenAI client init below
-
-# Determine if we have a usable API key
-if HF_TOKEN:
-    _api_key = HF_TOKEN
-    _provider = "huggingface"
-else:
-    # No key -- heuristic-only mode (no LLM calls made)
-    _api_key = "dummy"
-    _provider = "none"
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_KEY = HF_TOKEN
 
 # Models that support json_object response format
 JSON_MODE_MODELS = {
@@ -91,9 +83,6 @@ _model_base = MODEL_NAME.split(":")[0].lower()
 SUPPORTS_JSON_MODE = any(
     j in _model_base for j in ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"]
 )
-
-# Module-level OpenAI client (matches reference script pattern — validator may inspect)
-client_llm = OpenAI(base_url=API_BASE_URL, api_key=_api_key) if OpenAI and HF_TOKEN else None
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 BENCHMARK = "trade_exec_gym"
@@ -185,9 +174,11 @@ def extract_score(text: str) -> Optional[float]:
 async def run_hybrid_inference():
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Use module-level client_llm (matches reference script pattern)
-    llm_client = client_llm
-    llm_active = llm_client is not None
+    # Initialize OpenAI client as requested by Meta specification
+    client_llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
+    llm_active = client_llm is not None
+    _provider = "huggingface" if llm_active else "none"
+
     if llm_active:
         print(f"[INFO] LLM provider={_provider} model={MODEL_NAME} json_mode={SUPPORTS_JSON_MODE}", flush=True)
     else:
@@ -257,34 +248,27 @@ async def run_hybrid_inference():
             final_rate = suggested_rate
 
             # 5. LLM cognitive layer (only if API key available)
-            if llm_active and llm_client is not None:
+            if llm_active and client_llm:
                 try:
-                    # Build API call params
-                    api_kwargs = dict(
+                    prompt = HYBRID_SYSTEM_PROMPT
+                    user_msg = f"STEP: {step_count} | SHARES_REM: {rem} | BPS_IS: {current_is}\nACTION_NEEDED: Set rate relative to optimal suggestion ({suggested_rate:.4f})"
+
+                    kw = {}
+                    if SUPPORTS_JSON_MODE:
+                        kw["response_format"] = {"type": "json_object"}
+
+                    resp = await asyncio.to_thread(
+                        client_llm.chat.completions.create,
                         model=MODEL_NAME,
                         messages=[
-                            {"role": "system", "content": HYBRID_SYSTEM_PROMPT},
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"Market State:\n{state_text_safe}\n\n"
-                                    f"Heuristic Suggested Rate: {suggested_rate:.4f}\n"
-                                    f"Step: {step_count}/{max_steps_limit}\n"
-                                    f'Respond with JSON only: {{"rate_multiplier": 1.0, "reason": "..."}}'
-                                )
-                            }
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": user_msg}
                         ],
+                        temperature=0.1,
                         max_tokens=150,
+                        **kw
                     )
-                    # Only add response_format if model supports it
-                    if SUPPORTS_JSON_MODE:
-                        api_kwargs["response_format"] = {"type": "json_object"}
-
-                    completion = await asyncio.to_thread(
-                        llm_client.chat.completions.create,
-                        **api_kwargs
-                    )
-                    raw_content = completion.choices[0].message.content or ""
+                    raw_content = resp.choices[0].message.content or ""
                     llm_consecutive_failures = 0  # reset on success
 
                     # Robust JSON parsing with fallback
