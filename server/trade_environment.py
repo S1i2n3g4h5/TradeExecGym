@@ -9,14 +9,17 @@ Implements the MCPEnvironment pattern with four FastMCP tools:
 - execute_trade(...)
 - get_reward()
 
-Phase 2 adds an Almgren‑Chriss price model, dark‑pool routing, and a per‑step reward.
+Phase 2 adds an Almgren-Chriss price model, dark-pool routing, and a per-step reward.
 """
 
 import logging
+import statistics
+import traceback
 from typing import Any, Optional
 from uuid import uuid4
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from openenv.core.env_server.mcp_environment import MCPEnvironment
@@ -39,6 +42,41 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ── OpenEnv Spec: Typed models for Observation, Action, Reward ───────────────
+
+class TradeObservation(BaseModel):
+    """Structured numeric observation returned at each environment step."""
+    price_norm: float = Field(description="current_price / arrival_price (1.0 = no drift)")
+    progress_pct: float = Field(ge=0.0, le=1.0, description="step_count / max_steps")
+    remaining_pct: float = Field(ge=0.0, le=1.0, description="shares_remaining / total_shares")
+    vol_ratio: float = Field(ge=0.0, description="Intraday volume multiplier")
+    current_is_bps: float = Field(ge=0.0, description="Implementation Shortfall in bps")
+    done: bool = Field(description="Whether the episode is complete")
+    step: int = Field(ge=0, description="Current step number")
+    info: dict = Field(default_factory=dict, description="Additional metadata")
+
+
+class TradeAction(BaseModel):
+    """Validated action for one environment step."""
+    participation_rate: float = Field(
+        default=0.05, ge=0.0, le=0.25,
+        description="Fraction of ADV to trade (0.0=nothing, 0.25=maximum)"
+    )
+    use_dark_pool: bool = Field(default=False, description="Enable dark pool routing")
+    dark_pool_fraction: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Fraction to route via dark pool (0.3 recommended)"
+    )
+
+
+class TradeReward(BaseModel):
+    """Decomposed reward for transparency and debugging."""
+    value: float = Field(description="Total step reward")
+    dense: float = Field(description="IS improvement component (vs TWAP baseline)")
+    sparse: float = Field(description="Milestone bonus component")
+    terminal: float = Field(description="End-of-episode bonus component")
+
+
 from tasks.factory import get_task
 
 # Average daily volume (shares/day). Used for participation rate → shares.
@@ -50,7 +88,7 @@ class TradeExecEnvironment(MCPEnvironment):
     """Smart Order Router RL Environment (MCPEnvironment).
 
     Trains agents to minimize Implementation Shortfall (IS) using an
-    Almgren‑Chriss market‑impact model.
+    Almgren-Chriss market-impact model.
     """
     SUPPORTS_CONCURRENT_SESSIONS = True
 
@@ -98,10 +136,15 @@ class TradeExecEnvironment(MCPEnvironment):
 
     def get_market_state(self) -> str:
         """Return a snapshot of the current market state."""
+        if self.active_task is None or self._episode_id is None:
+            return (
+                "[!] ENVIRONMENT NOT INITIALIZED -- "
+                "Call reset(task_id=...) before get_market_state()."
+            )
         return self._build_market_state_text()
 
     def get_baseline_comparison(self) -> str:
-        """Return a comparison against TWAP, VWAP and AC‑optimal baselines."""
+        """Return a comparison against TWAP, VWAP and AC-optimal baselines."""
         return self._build_baseline_text()
 
     def execute_trade(
@@ -122,7 +165,7 @@ class TradeExecEnvironment(MCPEnvironment):
         )
 
     def get_reward(self) -> float:
-        """Return the most recent per‑step reward."""
+        """Return the most recent per-step reward."""
         return self._last_reward
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
@@ -152,7 +195,7 @@ class TradeExecEnvironment(MCPEnvironment):
         self._arrival_price = self.active_task.arrival_price
         self._mid_price = self._arrival_price
         self._total_cost = 0.0
-        self._step_count = 0          # ← CRITICAL: must reset between tasks
+        self._step_count = 0          # <- CRITICAL: must reset between tasks
         self._max_steps = self.active_task.max_steps
         self._episode_done = False
         self._baseline_step = 0
@@ -178,22 +221,22 @@ class TradeExecEnvironment(MCPEnvironment):
         description = self.active_task.description
         winning_secret = self.active_task.get_winning_secret()
         output = (
-            f"╔══════════════════════════════════════════════════════╗\n"
-            f"║     TradeExecGym — Smart Order Router                ║\n"
-            f"╚══════════════════════════════════════════════════════╝\n"
+            f"========================================================\n"
+            f"     TradeExecGym -- Smart Order Router                 \n"
+            f"========================================================\n"
             f"\nTask: {tid}\n{description}\n"
-            f"\n💡 WINNING SECRET: {winning_secret}\n"
+            f"\n[TIP] WINNING SECRET: {winning_secret}\n"
             f"\nObjective: Execute {self._total_shares:,} shares in {self._max_steps} steps.\n"
-            f"Arrival Price: ${self._arrival_price:.2f}  (IS benchmark — fixed)\n"
+            f"Arrival Price: ${self._arrival_price:.2f}  (IS benchmark -- fixed)\n"
             f"\nPerformance Targets (IS = Implementation Shortfall, lower = better):\n"
-            f"  Beat TWAP  (~25 bps) → positive reward\n"
-            f"  Beat VWAP  (~20 bps) → bonus reward\n"
-            f"  Beat AC Optimal (~14 bps) → Hall of Fame\n"
+            f"  Beat TWAP  (~25 bps) -> positive reward\n"
+            f"  Beat VWAP  (~20 bps) -> bonus reward\n"
+            f"  Beat AC Optimal (~14 bps) -> Hall of Fame\n"
             f"\nAvailable Tools:\n"
-            f"  get_market_state()            → read prices, inventory, IS metrics\n"
-            f"  execute_trade(rate=0.05)      → trade shares (primary action)\n"
-            f"  get_baseline_comparison()     → compare vs baselines\n"
-            f"  get_reward()                  → per‑step reward\n"
+            f"  get_market_state()            -> read prices, inventory, IS metrics\n"
+            f"  execute_trade(rate=0.05)      -> trade shares (primary action)\n"
+            f"  get_baseline_comparison()     -> compare vs baselines\n"
+            f"  get_reward()                  -> per-step reward\n"
             f"\nStart with execute_trade(participation_rate=0.05) to begin."
         )
 
@@ -209,13 +252,14 @@ class TradeExecEnvironment(MCPEnvironment):
             done=False,
             reward=None,
             metadata={
-                "output": output,
+                "output": self._ascii_safe(output),
                 "episode_id": self._episode_id,
                 "task_id": self._task_id,
                 "total_shares": self._total_shares,
                 "max_steps": self._max_steps,
                 "arrival_price": self._arrival_price,
                 "suggested_participation_rate": self._last_suggested_rate,
+                "observation": self._build_numeric_observation(),
             },
         )
 
@@ -225,7 +269,7 @@ class TradeExecEnvironment(MCPEnvironment):
         timeout_s: Optional[float] = None,
         **kwargs: Any,
     ) -> Observation:
-        """Fallback for non‑MCP actions (environment only supports MCP tools)."""
+        """Fallback for non-MCP actions (environment only supports MCP tools)."""
         return Observation(
             done=self._episode_done,
             reward=None,
@@ -241,7 +285,7 @@ class TradeExecEnvironment(MCPEnvironment):
 
     @property
     def state(self) -> State:
-        """Current episode state (used by reward calculation)."""
+        """Current episode state (used by reward calculation and openenv validate)."""
         return State(
             episode_id=self._episode_id,
             step_count=self._step_count,
@@ -251,7 +295,91 @@ class TradeExecEnvironment(MCPEnvironment):
             done=self._episode_done,
         )
 
+    @property
+    def numeric_observation(self) -> dict:
+        """Structured numeric observation (TradeObservation fields as dict)."""
+        return self._build_numeric_observation()
+
     # ── Tool helpers ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _ascii_safe(text: str) -> str:
+        """Replace all non-ASCII characters with safe ASCII equivalents.
+
+        Called on every state text output to guarantee evaluator terminal
+        compatibility and prevent UnicodeEncodeError on restricted systems.
+        """
+        replacements = {
+            # Emoji
+            "[!]": "[!]",      # [!]
+            "[NO]": "[NO]",     # [NO]
+            "[OK]": "[OK]",     # [OK]
+            "⚠": "[!]",      # ⚠
+            "️": "",         # variation selector (follows ⚠)
+            "[DONE]": "[DONE]",  # [DONE]
+            "[DOWN]": "[DOWN]",  # [DOWN]
+            "[UP]": "[UP]",    # [UP]
+            "[TIP]": "[TIP]",   # [TIP]
+            "[CRIT]": "[CRIT]",  # [CRIT]
+            "👉": ">>",   # 👉
+            "🏆": "[BEST]",  # 🏆
+            "🚨": "[!]",  # 🚨
+            "📊": "[BAR]",  # 📊
+            "😴": "[ZZZ]",  # 😴
+            "🔔": "[BELL]",  # 🔔
+            # Unicode punctuation / drawing chars
+            "--": "--",       # -- em dash
+            "–": "-",        # – en dash
+            "<-": "<-",       # <-
+            "->": "->",       # ->
+            ">=": ">=",       # >=
+            "<=": "<=",       # <=
+            "x": "x",        # x multiplication sign
+            "-": "-",        # - box drawing
+            "│": "|",        # │
+            "┌": "+",        # ┌
+            "┐": "+",        # ┐
+            "└": "+",        # └
+            "┘": "+",        # ┘
+            "├": "+",        # ├
+            "┤": "+",        # ┤
+            "┬": "+",        # ┬
+            "┴": "+",        # ┴
+            "┼": "+",        # ┼
+            "‘": "'",        # ' left single quote
+            "’": "'",        # ' right single quote
+            "“": '"',        # " left double quote
+            "”": '"',        # " right double quote
+            "•": "*",        # • bullet
+            "·": ".",        # · middle dot
+            "…": "...",      # … ellipsis
+        }
+        for uni, asc in replacements.items():
+            text = text.replace(uni, asc)
+        # Final pass: replace any remaining non-ASCII with '?'
+        return text.encode("ascii", errors="replace").decode("ascii")
+
+    def _build_numeric_observation(self) -> dict:
+        """Return structured numeric observation dict (TradeObservation-compatible).
+
+        These 5 fields form the canonical observation vector used by openenv validate
+        and any downstream RL framework (Stable-Baselines3, etc.).
+        """
+        return {
+            "price_norm": self._mid_price / max(0.001, self._arrival_price),
+            "progress_pct": self._step_count / max(1, self._max_steps),
+            "remaining_pct": self._shares_remaining / max(1, self._total_shares),
+            "vol_ratio": self._volume_ratio(),
+            "current_is_bps": self._compute_current_is(),
+            "done": self._episode_done,
+            "step": self._step_count,
+            "info": {
+                "task_id": self._task_id,
+                "shares_executed": self._shares_executed,
+                "total_shares": self._total_shares,
+                "mid_price": self._mid_price,
+            }
+        }
 
     def _build_market_state_text(self) -> str:
         """Format market state for ``get_market_state`` tool."""
@@ -290,14 +418,14 @@ class TradeExecEnvironment(MCPEnvironment):
             
             if finish_pct < 99.0:
                 pace_alert = (
-                    f"\n⚠️  PACE ALERT: At suggested fill rate you will complete ~{finish_pct:.0f}%.\n"
-                    f"    MINIMUM REQUIRED: rate ≥ {min_req_rate:.3f} every remaining step to avoid completion failure."
+                    f"\n[!]  PACE ALERT: At suggested fill rate you will complete ~{finish_pct:.0f}%.\n"
+                    f"    MINIMUM REQUIRED: rate >= {min_req_rate:.3f} every remaining step to avoid completion failure."
                 )
 
         vs_twap = (
-            f"✅ Beating TWAP by {twap_is - current_is:.1f} bps"
+            f"[OK] Beating TWAP by {twap_is - current_is:.1f} bps"
             if current_is < twap_is
-            else f"❌ Behind TWAP by {current_is - twap_is:.1f} bps"
+            else f"[NO] Behind TWAP by {current_is - twap_is:.1f} bps"
         )
 
         narrative = self.active_task.get_market_narrative(
@@ -312,14 +440,14 @@ class TradeExecEnvironment(MCPEnvironment):
         if hasattr(self, '_prev_is') and self._prev_is is not None:
             delta = current_is - self._prev_is
             if abs(delta) > 0.01:
-                is_trend = f" ({'📉 improving' if delta < 0 else '📈 worsening'} {abs(delta):.2f} bps vs last step)"
+                is_trend = f" ({'[improving]' if delta < 0 else '[worsening]'} {abs(delta):.2f} bps vs last step)"
         self._prev_is = current_is
 
         # ── Last reward signal ─────────────────────────────────────────────────
         reward_hint = ""
         if self._step_count > 0 and self._last_reward is not None:
             r = self._last_reward
-            reward_hint = f"\n  Last Reward:   {r:+.3f}  ({'✅ positive — keep going' if r > 0 else '⚠️ negative — adjust strategy'})"
+            reward_hint = f"\n  Last Reward:   {r:+.3f}  ({'[+] positive -- keep going' if r > 0 else '[-] negative -- adjust strategy'})"
 
         # ── Projected fill with suggested rate ────────────────────────────────
         proj_shares = int(suggested_rate * ADV_PER_STEP * vol_ratio)
@@ -327,14 +455,13 @@ class TradeExecEnvironment(MCPEnvironment):
 
         # ── Current grader score estimate ─────────────────────────────────────
         grader_now = self._compute_grader_score()
-        grader_hint = f"\n  Est. Score:    {grader_now:.4f} / 1.0000  (target ≥ 0.80 for professional tier)"
+        grader_hint = f"\n  Est. Score:    {grader_now:.4f} / 1.0000  (target >= 0.80 for professional tier)"
 
         # ── Task 4 adversary metrics (extra detail for LLM decision-making) ───
         adversary_detail = ""
         if self._task_id == "task4_adversarial" and hasattr(self.active_task, 'participation_history'):
             ph = self.active_task.participation_history
             if len(ph) >= 5:
-                import statistics
                 std = statistics.stdev(ph)
                 lag1 = 0.0
                 if len(ph) >= 3:
@@ -353,16 +480,16 @@ class TradeExecEnvironment(MCPEnvironment):
                     f"\n\nADVERSARY METRICS (Task 4)\n"
                     f"  Rate StdDev (last 5):   {std:.4f}  (need > {threshold_std} to avoid detection)\n"
                     f"  Lag-1 Autocorrelation:  {lag1:.4f}  (need < {threshold_lag} to avoid detection)\n"
-                    f"  {'⚠️  DETECTED: Randomize your next rate NOW!' if is_detected else '✅ Stealth OK: patterns sufficiently random'}"
+                    f"  {'[DETECTED] Randomize your next rate NOW!' if is_detected else '[OK] Stealth: patterns sufficiently random'}"
                 )
             else:
                 adversary_detail = "\n\nADVERSARY METRICS (Task 4)\n  Gathering pattern data... (requires 5 steps)"
 
-        return (
-            f"⚡ REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"
+        return self._ascii_safe((
+            f"[!] REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"
             f"   Unexecuted shares at deadline = severe score penalty.\n"
-            f"\nMARKET STATE — Step {self._step_count}/{self._max_steps}\n"
-            f"{'─'*52}\n"
+            f"\nMARKET STATE -- Step {self._step_count}/{self._max_steps}\n"
+            f"{'-'*52}\n"
             f"NARRATIVE: {narrative}\n"
             f"\nINVENTORY\n"
             f"  Executed:  {self._shares_executed:>10,} / {self._total_shares:,} ({pct_done:.1f}%)\n"
@@ -370,12 +497,12 @@ class TradeExecEnvironment(MCPEnvironment):
             f"  Time left: {steps_left} steps\n"
             f"\nPRICES\n"
             f"  Mid Price:     ${self._mid_price:.4f}\n"
-            f"  Arrival Price: ${self._arrival_price:.4f}  ← IS benchmark (fixed)\n"
+            f"  Arrival Price: ${self._arrival_price:.4f}  (IS benchmark, fixed at reset)\n"
             f"  Spread:        {spread_bps:.1f} bps\n"
             f"\nMARKET CONDITIONS\n"
-            f"  Volume Ratio: {vol_ratio:.2f}×  (1.0 = normal daily avg)\n"
+            f"  Volume Ratio: {vol_ratio:.2f}x  (1.0 = normal daily avg)\n"
             f"  Session:      {session}\n"
-            f"  Dark Pool:    {'✅ Available — use dark_pool_fraction=0.3-0.5 to cut spread cost' if dark_avail else '❌ Not available (order too small)'}\n"
+            f"  Dark Pool:    {'[OK] Available -- use dark_pool_fraction=0.3-0.5 to cut spread cost' if dark_avail else '[NO] Not available (order too small)'}\n"
             f"\nPERFORMANCE  (IS = basis points, lower = better)\n"
             f"  Your IS:   {current_is:.2f} bps{is_trend}   {vs_twap}\n"
             f"  TWAP IS:   {twap_is:.2f} bps\n"
@@ -384,10 +511,10 @@ class TradeExecEnvironment(MCPEnvironment):
             f"  Will fill:  ~{proj_shares:,} shares ({proj_pct_step:.2f}% of total) this step\n"
             f"  Remaining after: ~{max(0, self._shares_remaining - proj_shares):,} shares\n"
             f"{adversary_detail}\n"
-            f"\n👉 SUGGESTED ACTION: participation_rate={suggested_rate:.3f}\n"
+            f"\n>> SUGGESTED ACTION: participation_rate={suggested_rate:.3f}\n"
             f"   (Almgren-Chriss optimal for current inventory/time remaining)\n"
             f"   rate_multiplier > 1.0 = trade faster | < 1.0 = slower | 1.0 = approve"
-        )
+        ))
 
     def _build_baseline_text(self) -> str:
         """Format baseline comparison for ``get_baseline_comparison`` tool."""
@@ -398,25 +525,25 @@ class TradeExecEnvironment(MCPEnvironment):
 
         def cmp(your: float, base: float, label: str) -> str:
             if your < base:
-                return f"  ✅ Beating {label} by {base - your:.1f} bps"
-            return f"  ❌ Behind  {label} by {your - base:.1f} bps"
+                return f"  [OK] Beating {label} by {base - your:.1f} bps"
+            return f"  [NO] Behind  {label} by {your - base:.1f} bps"
 
         return (
-            f"BASELINE COMPARISON — Step {self._step_count}/{self._max_steps}\n"
-            f"{'─'*52}\n"
-            f"Implementation Shortfall (IS) — LOWER IS BETTER:\n\n"
+            f"BASELINE COMPARISON -- Step {self._step_count}/{self._max_steps}\n"
+            f"{'-'*52}\n"
+            f"Implementation Shortfall (IS) -- LOWER IS BETTER:\n\n"
             f"  🤖 You:         {current_is:>7.2f} bps\n"
-            f"  📈 TWAP:        {twap_is:>7.2f} bps  (naive equal-slice)\n"
+            f"  [UP] TWAP:        {twap_is:>7.2f} bps  (naive equal-slice)\n"
             f"  📊 VWAP:        {vwap_is:>7.2f} bps  (volume-proportional)\n"
-            f"  🧮 AC Optimal:  {ac_is:>7.2f} bps  (Almgren‑Chriss optimal)\n\n"
+            f"  🧮 AC Optimal:  {ac_is:>7.2f} bps  (Almgren-Chriss optimal)\n\n"
             f"STATUS:\n"
             f"{cmp(current_is, twap_is, 'TWAP')}\n"
             f"{cmp(current_is, vwap_is, 'VWAP')}\n"
             f"{cmp(current_is, ac_is, 'AC Optimal')}\n\n"
             f"TARGETS:\n"
-            f"  IS < {twap_is:.1f} → beat TWAP    (+reward)\n"
-            f"  IS < {vwap_is:.1f} → beat VWAP    (++reward)\n"
-            f"  IS < {ac_is:.1f}  → beat AC Optimal (Hall of Fame)"
+            f"  IS < {twap_is:.1f} -> beat TWAP    (+reward)\n"
+            f"  IS < {vwap_is:.1f} -> beat VWAP    (++reward)\n"
+            f"  IS < {ac_is:.1f}  -> beat AC Optimal (Hall of Fame)"
         )
 
     def _execute_trade_logic(
@@ -427,15 +554,21 @@ class TradeExecEnvironment(MCPEnvironment):
         order_type: str,
         limit_offset_bps: float,
     ) -> str:
-        """Core execution logic using Almgren‑Chriss physics and venue routing."""
+        """Core execution logic using Almgren-Chriss physics and venue routing."""
+        # Guard: must call reset() before execute_trade()
+        if self.active_task is None or self._episode_id is None:
+            return (
+                "[!] ENVIRONMENT NOT INITIALIZED -- "
+                "Call reset(task_id=...) before execute_trade()."
+            )
         if self._episode_done:
-            return "❌ Episode already complete. Call reset() to start a new episode."
+            return "[NO] Episode already complete. Call reset() to start a new episode."
 
         try:
             steps_left = max(0, self._max_steps - self._step_count)
             if steps_left <= 0:
                 self._episode_done = True
-                return "⏰ Time limit reached. Episode complete. Call reset() for a new episode."
+                return "[TIME] Time limit reached. Episode complete. Call reset() for a new episode."
 
             # Clamp participation rate
             participation_rate = max(0.0, min(0.25, float(participation_rate)))
@@ -528,13 +661,14 @@ class TradeExecEnvironment(MCPEnvironment):
             
             # Compute reward safely using the new 3-component formula
             step_reward = compute_reward(
-                state_meta={}, # Reserved for future meta
+                state_meta={},  # Reserved for future meta
                 is_current=current_is,
                 is_baseline=twap_is,
                 shares_executed=self._shares_executed,
                 total_shares=self._total_shares,
                 is_done=self._episode_done,
-                slippage_bps=total_step_slippage_bps
+                slippage_bps=total_step_slippage_bps,
+                participation_rate=participation_rate,
             )
             self._last_reward = step_reward + sparse_bonus
 
@@ -547,27 +681,27 @@ class TradeExecEnvironment(MCPEnvironment):
             )
 
             # Formatting response
-            dark_line = f"\n  Dark Pool: {dark_filled:,} shares @ ${dark_price:.4f} (zero impact ✅)" if dark_filled > 0 else ""
-            toxic_line = f"\n  Toxic Flow: ⚠️ Penalty {toxic_slippage:.1f} bps (Info Leakage!)" if toxic_slippage > 0 else ""
+            dark_line = f"\n  Dark Pool: {dark_filled:,} shares @ ${dark_price:.4f} (zero impact [OK])" if dark_filled > 0 else ""
+            toxic_line = f"\n  Toxic Flow: [!] Penalty {toxic_slippage:.1f} bps (Info Leakage!)" if toxic_slippage > 0 else ""
 
             completion_block = ""
             if is_done:
                 grader = self._compute_grader_score()
                 pct = self._shares_executed / self._total_shares * 100
                 completion_block = (
-                    f"\n\n{'═'*52}\n"
-                    f"🏁 EPISODE COMPLETE\n"
+                    f"\n\n{'='*52}\n"
+                    f"EPISODE COMPLETE\n"
                     f"  Shares filled:  {self._shares_executed:,} / {self._total_shares:,} ({pct:.1f}%)\n"
                     f"  Final IS:       {current_is:.2f} bps\n"
                     f"  Grader Score:   {grader:.4f} / 1.0000\n"
-                    f"  vs TWAP ({twap_is:.1f} bps): {'BEAT ✅' if current_is < twap_is else 'MISSED ❌'}\n"
-                    f"  vs VWAP ({vwap_is:.1f} bps): {'BEAT ✅' if current_is < vwap_is else 'MISSED ❌'}\n"
-                    f"{'═'*52}\n"
+                    f"  vs TWAP ({twap_is:.1f} bps): {'BEAT [OK]' if current_is < twap_is else 'MISSED [NO]'}\n"
+                    f"  vs VWAP ({vwap_is:.1f} bps): {'BEAT [OK]' if current_is < vwap_is else 'MISSED [NO]'}\n"
+                    f"{'='*52}\n"
                 )
 
-            return (
-                f"TRADE EXECUTED — Step {self._step_count}/{self._max_steps}\n"
-                f"{'─'*52}\n"
+            raw_result = (
+                f"TRADE EXECUTED -- Step {self._step_count}/{self._max_steps}\n"
+                f"{'-'*52}\n"
                 f"NARRATIVE: {narrative}\n"
                 f"\nORDER: rate={participation_rate:.3f} | {order_type} | "
                 f"{'dark+lit' if dark_filled > 0 else 'lit only'}\n"
@@ -587,13 +721,13 @@ class TradeExecEnvironment(MCPEnvironment):
                 f"  VWAP IS:  {vwap_is:.2f} bps"
                 f"{completion_block}"
             )
+            return self._ascii_safe(raw_result)
         except Exception as e:
-            import traceback
             err_trace = traceback.format_exc()
             logger.error("TRADE EXECUTION CRASH:\n%s", err_trace)
             return (
-                f"⚠️ ENGINE ERROR — Step {self._step_count}\n"
-                f"{'─'*52}\n"
+                f"[!] ENGINE ERROR -- Step {self._step_count}\n"
+                f"{'-'*52}\n"
                 f"The simulation engine encountered a critical logic error:\n"
                 f"Error: {str(e)}\n\n"
                 f"This usually happens if a physics parameter overflows or a task metric "
@@ -636,7 +770,7 @@ class TradeExecEnvironment(MCPEnvironment):
         GBM price path as the live agent. Any IS advantage the agent achieves is purely from
         better trading decisions, not a lucky price sequence.
 
-        AC Optimal uses hyperbolic (cosh/sinh) decay — a front-loaded schedule derived from
+        AC Optimal uses hyperbolic (cosh/sinh) decay -- a front-loaded schedule derived from
         Almgren-Chriss (2000, Eq. 13) that is analytically optimal for minimizing IS given
         a known volatility and risk aversion parameter.
         """
@@ -713,7 +847,7 @@ class TradeExecEnvironment(MCPEnvironment):
         logger.info("Shadow Baselines cached for episode (seed=%s)", seed)
 
     def _volume_ratio(self) -> float:
-        """Intraday volume ratio (U‑shaped: high open/close, low midday)."""
+        """Intraday volume ratio (U-shaped: high open/close, low midday)."""
         return {"open": 1.6, "midday": 0.5, "close": 1.8}.get(self._intraday_session(), 1.0)
 
     def _intraday_session(self) -> str:
@@ -731,7 +865,7 @@ class TradeExecEnvironment(MCPEnvironment):
         WHY DELEGATE TO THE TASK:
         Each of the 5 tasks has a fundamentally different success criterion:
         - Task 1-3: IS quality relative to AC Optimal (the 50/30/20 weighting)
-        - Task 5: Binary completion gate (score = 0.0 unless ≥99.9% filled)
+        - Task 5: Binary completion gate (score = 0.0 unless >=99.9% filled)
         Centralizing grader logic in `get_grader_score()` on each task object allows
         per-task winner definitions WITHOUT changing the environment's core step logic.
 
@@ -739,7 +873,7 @@ class TradeExecEnvironment(MCPEnvironment):
         - 50% IS Quality: How close agent IS is to the AC Optimal floor (Economic Mastery)
         - 30% Inventory Completion: Did the agent actually fill the order? (Execution Fidelity)
         - 20% Baseline Beating: Did the agent outperform TWAP and VWAP? (Relative Edge)
-        This weighting reflects real-world SOR performance attribution — IS quality matters
+        This weighting reflects real-world SOR performance attribution -- IS quality matters
         most, but an unfilled order is an operational failure regardless of slippage.
         """
         raw_score = self.active_task.get_grader_score(

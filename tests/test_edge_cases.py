@@ -23,7 +23,7 @@ class TestRateClamping:
         """
         When rate > 0.25, verify environment clamps it to 0.25 (not over-execute).
         
-        This prevents agents from accidentally executing 4× the intended volume
+        This prevents agents from accidentally executing 4x the intended volume
         by submitting rate=0.99 instead of rate=0.25.
         """
         env = TradeExecEnvironment()
@@ -43,10 +43,10 @@ class TestRateClamping:
             f"Rate clamping failed: rate=0.99 executed {shares_at_099} shares, " \
             f"but rate=0.25 executed {shares_at_025} shares (should be equal)"
         
-        # Verify shares executed is reasonable (not 4× the expected amount)
-        # At rate=0.25 with ADV≈82,000, one step should execute ~5,000-6,000 shares
+        # Verify shares executed is reasonable (not 4x the expected amount)
+        # At rate=0.25 with ADV~82,000, one step should execute ~5,000-6,000 shares
         assert shares_at_099 <= 10000, \
-            f"Over-execution detected: {shares_at_099} shares in one step (expected ≤10,000)"
+            f"Over-execution detected: {shares_at_099} shares in one step (expected <=10,000)"
     
     def test_negative_rate_clamped_to_zero(self):
         """Verify that negative rates are clamped to 0.0 (no execution)."""
@@ -96,7 +96,7 @@ class TestCompletionEdgeCases:
         # Verify high completion (task1 is very difficult, 90%+ is excellent)
         completion_pct = (env._shares_executed / env._total_shares) * 100
         assert completion_pct >= 90.0, \
-            f"Expected ≥90% completion at max rate, got {completion_pct:.2f}%"
+            f"Expected >=90% completion at max rate, got {completion_pct:.2f}%"
         
         # Verify grader score is valid
         grader_score = env._compute_grader_score()

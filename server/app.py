@@ -1,20 +1,28 @@
 """
 TradeExecGym FastAPI application entry point.
 
-Creates the HTTP server exposing TradeExecEnvironment
-via OpenEnv's create_app() pattern. Compatible with MCPToolClient.
+HuggingFace Spaces Architecture:
+  - Single public port 7860 (only port HF exposes externally)
+  - FastAPI serves ALL OpenEnv routes: POST /reset, POST /step, GET /health etc.
+  - Gradio UI runs as a SEPARATE background process (started by start.sh)
+    connecting to this FastAPI server internally.
 
-Usage:
-    # Development
-    uvicorn server.app:app --host 0.0.0.0 --port 7865 --reload
+This ensures /health and /reset respond INSTANTLY (< 1s) without waiting
+for Gradio/PyTorch/SB3 model loading (which takes 10-15s).
 
-    # HF Spaces (Docker)
-    uvicorn server.app:app --host 0.0.0.0 --port 7865
+Routes:
+  POST /reset      -- OpenEnv spec: start new episode
+  POST /step       -- OpenEnv spec: call tool (execute_trade, get_reward, etc.)
+  GET  /health     -- Health check (instant, no Gradio dependency)
+  GET  /state      -- Current episode state
+  GET  /metadata   -- Environment metadata
+  GET  /schema     -- Action/Observation schema
+  GET  /docs       -- FastAPI OpenAPI docs
+  GET  /mcp        -- MCP protocol endpoint
 """
 import os
 import sys
 
-# Aggressive Path Resolution for Docker/OpenEnv
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
@@ -22,16 +30,13 @@ if ROOT_DIR not in sys.path:
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
-# Handle direct execution gracefully
 try:
     from .trade_environment import TradeExecEnvironment
 except ImportError:
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from server.trade_environment import TradeExecEnvironment
 
-# create_app() takes the factory class (not an instance) for session isolation
+# ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
+# LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
 app = create_app(
     TradeExecEnvironment,
     CallToolAction,
@@ -40,9 +45,12 @@ app = create_app(
     max_concurrent_envs=5
 )
 
+
 def main():
     import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7865)
+    port = int(os.getenv("PORT", "7860"))
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port)
+
 
 if __name__ == "__main__":
     main()

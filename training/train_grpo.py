@@ -1,5 +1,5 @@
 """
-train_grpo.py — PPO-based RL training with Group-Relative reward shaping.
+train_grpo.py -- PPO-based RL training with Group-Relative reward shaping.
 
 This script trains a Proximal Policy Optimization (PPO) agent on the
 TradeExecGym environment. The reward function implements Group-Relative
@@ -21,7 +21,7 @@ import os
 def train_ppo_with_relative_reward(
     task_id: str = "task1_twap_beater",
     total_timesteps: int = 5_000,
-    base_url: str = "http://localhost:7865",
+    base_url: str = "http://localhost:7860",
 ) -> None:
     """Train a PPO agent with group-relative (TWAP-benchmarked) reward shaping.
 
@@ -47,12 +47,12 @@ def train_ppo_with_relative_reward(
         tensorboard_log="./tensorboard/"
     )
 
-    print(f"🚀 Training PPO agent (group-relative reward vs TWAP) on {task_id}...")
+    print(f"[>>] Training PPO agent (group-relative reward vs TWAP) on {task_id}...")
     model.learn(total_timesteps=total_timesteps, progress_bar=True)
 
     os.makedirs("models", exist_ok=True)
     model.save("models/grpo_agent")
-    print("✅ PPO agent (GRPO-style relative reward) trained and saved to models/grpo_agent.")
+    print("[OK] PPO agent (GRPO-style relative reward) trained and saved to models/grpo_agent.")
 
 
 if __name__ == "__main__":

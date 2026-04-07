@@ -1,3 +1,17 @@
+"""
+Base Trade Task
+===============
+Abstract base class for all 5 TradeExecGym tasks.
+Subclasses define: task_id, total_shares, max_steps, arrival_price, sigma, description.
+
+Grader Formula (default, Tasks 1-4):
+  50% IS Quality: how close agent IS is to AC Optimal floor
+  30% Completion: fraction of total_shares actually filled
+  20% Baseline Beating: 10% for beating TWAP + 10% for beating VWAP
+  Score range: [0.0001, 0.9999] (exclusive bounds for leaderboard compatibility)
+
+Task 5 overrides get_grader_score() with a hard completion gate.
+"""
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 

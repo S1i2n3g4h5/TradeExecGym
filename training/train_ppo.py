@@ -28,7 +28,7 @@ def train():
         name_prefix='sor_ppo_agent'
     )
     
-    print("🚀 Starting Grade-level RL Training...")
+    print("[>>] Starting Grade-level RL Training...")
     model.learn(
         total_timesteps=10_000, 
         callback=checkpoint_callback,
@@ -37,7 +37,7 @@ def train():
     
     # Save final model
     model.save("models/sor_ppo_final")
-    print("✅ Training complete. Model saved to models/sor_ppo_final.zip")
+    print("[OK] Training complete. Model saved to models/sor_ppo_final.zip")
 
 if __name__ == "__main__":
     if not os.path.exists("models"):

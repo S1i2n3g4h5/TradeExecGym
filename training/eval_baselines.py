@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-eval_baselines.py — Evaluate baseline agents against TradeExecGym.
+eval_baselines.py -- Evaluate baseline agents against TradeExecGym.
 Executes TWAP, VWAP, and AC Optimal via TradeExecClient.
 """
 
 import argparse
 import asyncio
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='replace')
 
 from baselines.twap import get_twap_action
 from baselines.vwap import get_vwap_action
@@ -99,13 +101,13 @@ async def run_baseline_episode(base_url: str, task_id: str, agent_type: str, ver
 
     except Exception as e:
         results["error"] = str(e)
-        print(f"  ❌ Error in {agent_type}: {e}")
+        print(f"  [FAIL] Error in {agent_type}: {e}")
 
     return results
 
 async def main():
     parser = argparse.ArgumentParser(description="Evaluate Baselines")
-    parser.add_argument("--url", default="http://localhost:7865", help="Server API URL")
+    parser.add_argument("--url", default="http://localhost:7860", help="Server API URL")
     parser.add_argument("--task", default="task1_twap_beater", help="Task ID to evaluate on (e.g. task1_twap_beater)")
     args = parser.parse_args()
 

@@ -34,14 +34,14 @@ def test_price_model_impact():
     assert state.price > 100.0  # Price should have shifted up from Step 1
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Participation Rate Clamping Tests
-# Proves that the environment enforces safe action bounds (0.0 ≤ rate ≤ 0.25)
-# regardless of what an agent sends — critical for safe RL training.
-# ──────────────────────────────────────────────────────────────────────────────
+# Proves that the environment enforces safe action bounds (0.0 <= rate <= 0.25)
+# regardless of what an agent sends -- critical for safe RL training.
+# ------------------------------------------------------------------------------
 
 def test_participation_rate_clamped_above_max():
-    """Rate > 0.25 must be silently clamped to 0.25 — never crash or over-trade."""
+    """Rate > 0.25 must be silently clamped to 0.25 -- never crash or over-trade."""
     import sys; sys.path.insert(0, '.')
     from server.trade_environment import TradeExecEnvironment
     env = TradeExecEnvironment()
@@ -49,18 +49,18 @@ def test_participation_rate_clamped_above_max():
     # Execute with an illegal rate of 0.99
     result = env.execute_trade(participation_rate=0.99)
     assert result is not None
-    # Shares executed should be ≤ what rate=0.25 would produce (not 4× that)
-    # adv_per_step ≈ 10M/780 ≈ 12,820; max fill = 0.25 × 12,820 ≈ 3,205
-    # At rate=0.25 (max), one step executes ≈5128 shares (ADV-dependent).
-    # At rate=0.99 (clamped to 0.25), it must execute the same ≈5128 — not 4× more.
-    # Verify clamping by checking result matches rate=0.25 baseline (≤ 6000 shares).
+    # Shares executed should be <= what rate=0.25 would produce (not 4x that)
+    # adv_per_step ~ 10M/780 ~ 12,820; max fill = 0.25 x 12,820 ~ 3,205
+    # At rate=0.25 (max), one step executes ~5128 shares (ADV-dependent).
+    # At rate=0.99 (clamped to 0.25), it must execute the same ~5128 -- not 4x more.
+    # Verify clamping by checking result matches rate=0.25 baseline (<= 6000 shares).
     assert env._shares_executed <= 6000, (
-        f"Clamping failed — executed {env._shares_executed} shares (expected ≤6000 for rate clamped to 0.25)"
+        f"Clamping failed -- executed {env._shares_executed} shares (expected <=6000 for rate clamped to 0.25)"
     )
 
 
 def test_participation_rate_clamped_below_zero():
-    """Negative rate must be clamped to 0.0 — no reverse trading allowed."""
+    """Negative rate must be clamped to 0.0 -- no reverse trading allowed."""
     import sys; sys.path.insert(0, '.')
     from server.trade_environment import TradeExecEnvironment
     env = TradeExecEnvironment()
@@ -85,6 +85,6 @@ def test_exactly_100pct_completion_grader():
     # Score must be a valid float and not NaN/Inf
     assert isinstance(score, float), f"Grader returned {type(score)}"
     assert 0.0 <= score <= 1.0, f"Grader score {score} out of [0, 1] bounds"
-    # Completion should be ≥ 70% (max rate may not always hit 100% due to ADV cap)
-    assert completion >= 0.70, f"Expected ≥70% completion at max rate, got {completion:.1%}"
+    # Completion should be >= 70% (max rate may not always hit 100% due to ADV cap)
+    assert completion >= 0.70, f"Expected >=70% completion at max rate, got {completion:.1%}"
 

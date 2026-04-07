@@ -71,14 +71,14 @@ class TestPhase1Foundations(unittest.TestCase):
     def test_reward_components(self):
         """Verify Dense, Delayed, and Sparse reward logic."""
         # 1. Dense: Agent beating baseline
-        r_good = compute_reward({}, is_current=10.0, is_baseline=20.0, 
+        r_good = compute_reward({}, is_current=10.0, is_baseline=20.0, participation_rate=0.05, 
                                shares_executed=100, total_shares=1000, 
                                is_done=False, slippage_bps=5.0)
         # (20-10)*0.1 = 1.0
         self.assertAlmostEqual(r_good, 1.0)
         
         # 2. Delayed: Completion bonus
-        r_done = compute_reward({}, is_current=15.0, is_baseline=20.0, 
+        r_done = compute_reward({}, is_current=15.0, is_baseline=20.0, participation_rate=0.05, 
                                shares_executed=980, total_shares=1000, 
                                is_done=True, slippage_bps=5.0)
         # Dense: (20-15)*0.1 = 0.5

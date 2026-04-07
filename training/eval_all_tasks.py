@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-eval_all_tasks.py — Run TWAP baseline against ALL 5 tasks end-to-end.
+eval_all_tasks.py -- Run TWAP baseline against ALL 5 tasks end-to-end.
 
 This confirms:
 1. Every task initializes correctly via the factory
@@ -13,6 +13,8 @@ This confirms:
 import argparse
 import asyncio
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='replace')
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -103,13 +105,13 @@ async def run_single_task(base_url: str, task_id: str) -> dict:
 
 async def main():
     parser = argparse.ArgumentParser(description="Evaluate all tasks")
-    parser.add_argument("--url", default="http://localhost:7865")
+    parser.add_argument("--url", default="http://localhost:7860")
     args = parser.parse_args()
 
     base_url = args.url.rstrip("/")
 
     print("=" * 70)
-    print("  TradeExecGym — Phase 3: All-Task Verification")
+    print("  TradeExecGym -- Phase 3: All-Task Verification")
     print("=" * 70)
     print(f"  Server: {base_url}")
     print("=" * 70)
@@ -119,19 +121,19 @@ async def main():
     results_table = []
 
     for task_id in TASKS:
-        print(f"  ▶ Running {task_id} ...", end="", flush=True)
+        print(f"  [>] Running {task_id} ...", end="", flush=True)
         res = await run_single_task(base_url, task_id)
 
         if res["success"] and res["grader_score"] is not None:
             is_str = f"{res['final_is_bps']:>7.2f}" if res["final_is_bps"] is not None else "    N/A"
             sc_str = f"{res['grader_score']:>7.4f}" if res["grader_score"] is not None else "    N/A"
-            print(f"  ✅  IS={is_str} bps  Score={sc_str}  Steps={res['steps_taken']}")
+            print(f"  [OK]  IS={is_str} bps  Score={sc_str}  Steps={res['steps_taken']}")
             results_table.append((task_id, is_str, sc_str, res["steps_taken"], "PASS"))
         elif res["success"]:
-            print(f"  ⚠️  Completed but no grader (steps={res['steps_taken']})")
+            print(f"  [WARN]  Completed but no grader (steps={res['steps_taken']})")
             results_table.append((task_id, "N/A", "N/A", res["steps_taken"], "WARN"))
         else:
-            print(f"  ❌  FAILED: {res['error']}")
+            print(f"  [FAIL]  FAILED: {res['error']}")
             results_table.append((task_id, "N/A", "N/A", 0, "FAIL"))
             all_passed = False
 
@@ -140,14 +142,14 @@ async def main():
     print(f"  {'Task':<30} {'IS (bps)':>10} {'Score':>10} {'Steps':>6} {'Status':>8}")
     print("-" * 70)
     for task_id, is_v, sc_v, steps, status in results_table:
-        emoji = "✅" if status == "PASS" else ("⚠️" if status == "WARN" else "❌")
+        emoji = "[OK]" if status == "PASS" else ("[WARN]" if status == "WARN" else "[FAIL]")
         print(f"  {task_id:<30} {is_v:>10} {sc_v:>10} {steps:>6} {emoji:>6}")
     print("=" * 70)
 
     if all_passed:
-        print("\n  🎉 ALL TASKS PASSED — Phase 3 Verified!\n")
+        print("\n  [DONE] ALL TASKS PASSED -- Phase 3 Verified!\n")
     else:
-        print("\n  ⚠️  Some tasks failed. Review above output.\n")
+        print("\n  [WARN]  Some tasks failed. Review above output.\n")
         sys.exit(1)
 
 
