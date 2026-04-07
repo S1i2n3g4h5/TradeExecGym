@@ -287,6 +287,7 @@ class TradeExecEnvironment(MCPEnvironment):
         # so the Meta dashboard Phase 2 validator sees a valid reward signal.
         try:
             grader_score = self._compute_grader_score()
+            grader_score = max(0.01, min(0.99, grader_score))
             obs.reward = grader_score
             obs.done = self._episode_done
         except Exception:
