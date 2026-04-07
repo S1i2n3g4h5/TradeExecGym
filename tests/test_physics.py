@@ -21,25 +21,13 @@ def test_price_model_impact():
     pm.reset(initial_price=100.0)
     # Step 1: 0.1 participation
     state = pm.step(participation_rate=0.1)
-<<<<<<< HEAD
-    assert state.temporary_impact > 0
-    # Permanent impact for step 1 is based on cumulative_participation (initially 0)
-    assert state.permanent_impact == 0.0
-=======
     assert state.last_temp_impact_bps > 0
     # Permanent impact for step 1 is now last_perm_impact_bps
     assert state.last_perm_impact_bps > 0.0
->>>>>>> gh/feature/planning-docs
     
     # Step 2: 0.0 participation (to see the carry-over from Step 1)
     state = pm.step(participation_rate=0.0)
     # Temporary impact should be 0 because current participation is 0
-<<<<<<< HEAD
-    assert state.temporary_impact == 0.0
-    # Permanent impact should now be non-zero (gamma * 0.1)
-    assert state.permanent_impact > 0.0
-    assert state.price > 100.0  # Price should have shifted up
-=======
     assert state.last_temp_impact_bps == 0.0
     # Permanent impact for this step should be 0 because participation is 0
     assert state.last_perm_impact_bps == 0.0
@@ -99,5 +87,4 @@ def test_exactly_100pct_completion_grader():
     assert 0.0 <= score <= 1.0, f"Grader score {score} out of [0, 1] bounds"
     # Completion should be ≥ 70% (max rate may not always hit 100% due to ADV cap)
     assert completion >= 0.70, f"Expected ≥70% completion at max rate, got {completion:.1%}"
->>>>>>> gh/feature/planning-docs
 
