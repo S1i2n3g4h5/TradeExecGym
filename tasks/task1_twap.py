@@ -1,9 +1,6 @@
 from .base_task import BaseTradeTask
 
 class TaskTwapBeater(BaseTradeTask):
-<<<<<<< HEAD
-    """Buy 100K shares in 30 steps. Beat TWAP (~25 bps IS). Easy difficulty."""
-=======
     """Buy 100,000 shares in 30 steps and beat the TWAP benchmark (~25 bps IS).
 
     This is the entry-level task. TWAP (Time-Weighted Average Price) slices
@@ -14,7 +11,6 @@ class TaskTwapBeater(BaseTradeTask):
     Difficulty: Easy.
     Target IS: < 25 bps (beat TWAP). Elite target: < 14 bps (beat AC Optimal).
     """
->>>>>>> gh/feature/planning-docs
 
     def __init__(self):
         super().__init__()
@@ -25,8 +21,6 @@ class TaskTwapBeater(BaseTradeTask):
         self.sigma = 0.02
         self.description = "Buy 100K shares in 30 steps. Beat TWAP (~25 bps IS). Easy difficulty."
 
-<<<<<<< HEAD
-=======
     def get_winning_secret(self) -> str:
         return "Exploit the Open/Close volume surges! Trading 2-3x faster at the open (first 20% steps) significantly reduces price impact relative to the TWAP baseline."
 
@@ -92,4 +86,3 @@ class TaskTwapBeater(BaseTradeTask):
             f"{session_hint} {is_hint}{urgency}"
         )
 
->>>>>>> gh/feature/planning-docs

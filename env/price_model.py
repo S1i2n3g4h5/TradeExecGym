@@ -4,21 +4,12 @@ from typing import Optional
 
 @dataclass
 class MarketState:
-<<<<<<< HEAD
-    price: float
-    volatility: float
-    cumulative_participation: float
-    time: float  # normalized [0,1]
-    temporary_impact: float = 0.0
-    permanent_impact: float = 0.0
-=======
     price: float  # The persistent mid-market price
     volatility: float
     cumulative_participation: float
     time: float  # normalized [0,1]
     last_temp_impact_bps: float = 0.0  # Observed only for the current fill
     last_perm_impact_bps: float = 0.0  # Persistent shift added this step
->>>>>>> gh/feature/planning-docs
 
 class PriceModel:
     """Almgren‑Chriss price dynamics (GBM + impact).
@@ -68,32 +59,6 @@ class PriceModel:
         """
         if self.state is None:
             raise RuntimeError("PriceModel must be reset before stepping.")
-<<<<<<< HEAD
-        # GBM drift (μ is set to 0 for a martingale price)
-        drift = 0.0
-        # Random shock
-        z = self.rng.standard_normal()
-        price = self.state.price * np.exp(
-            (drift - 0.5 * self.sigma ** 2) * self.dt + self.sigma * np.sqrt(self.dt) * z
-        )
-        # Temporary impact (linear in participation)
-        tmp_impact = self.eta * participation_rate
-        # Permanent impact (proportional to cumulative participation)
-        perm_impact = self.gamma * self.state.cumulative_participation
-        # Apply impacts to price (additive in basis points)
-        price *= 1.0 + (tmp_impact + perm_impact) / 10_000
-        # Update cumulative participation
-        cum_part = self.state.cumulative_participation + participation_rate
-        # Advance time
-        new_time = min(1.0, self.state.time + self.dt)
-        self.state = MarketState(
-            price=price,
-            volatility=self.sigma,
-            cumulative_participation=cum_part,
-            time=new_time,
-            temporary_impact=tmp_impact,
-            permanent_impact=perm_impact,
-=======
             
         # 1. GBM drift (μ is set to 0 for a martingale price)
         drift = 0.0
@@ -130,6 +95,5 @@ class PriceModel:
             time=new_time,
             last_temp_impact_bps=temp_impact_bps,
             last_perm_impact_bps=perm_impact_bps,
->>>>>>> gh/feature/planning-docs
         )
         return self.state

@@ -1,10 +1,4 @@
 import statistics
-<<<<<<< HEAD
-from .base_task import BaseTradeTask
-
-class TaskAdversary(BaseTradeTask):
-    """Sell 600K shares while HFT adversary exploits predictable patterns."""
-=======
 import random
 import numpy as np
 from .base_task import BaseTradeTask
@@ -20,7 +14,6 @@ class TaskAdversary(BaseTradeTask):
     Reference: Cartea, Jaimungal & Penalva (2015) "Algorithmic and High-Frequency Trading"
     Chapter 7: Predatory Trading and Order Flow Toxicity
     """
->>>>>>> gh/feature/planning-docs
 
     def __init__(self):
         super().__init__()
@@ -30,11 +23,6 @@ class TaskAdversary(BaseTradeTask):
         self.arrival_price = 150.0
         self.sigma = 0.02
         self.description = "Sell 600K shares while HFT adversary exploits predictable patterns. Expert difficulty."
-<<<<<<< HEAD
-        
-        self.participation_history = []
-        self.leakage_penalty = 15.0  # bps penalty if detected
-=======
         self.participation_history = []
         self.leakage_penalty_base = 15.0
         self._episode_seed = 42
@@ -61,7 +49,6 @@ class TaskAdversary(BaseTradeTask):
             return float(r)
         except Exception:
             return 0.0
->>>>>>> gh/feature/planning-docs
 
     def on_trade_step(
         self,
@@ -71,23 +58,6 @@ class TaskAdversary(BaseTradeTask):
         shares_executed: int,
         shares_remaining: int
     ) -> float:
-<<<<<<< HEAD
-        """
-        Adversarial detector:
-        If standard deviation of the last 5 participation rates is < 0.005,
-        the adversary predicts the order flow and fronts it, causing 15 bps slippage.
-        """
-        self.participation_history.append(participation_rate)
-        if len(self.participation_history) > 5:
-            self.participation_history.pop(0)
-
-        # Need at least 5 steps to establish a recognizable pattern
-        if len(self.participation_history) == 5:
-            std_dev = statistics.stdev(self.participation_history)
-            if std_dev < 0.005:
-                # Information leakage detected
-                return self.leakage_penalty
-=======
         self.participation_history.append(participation_rate)
         if len(self.participation_history) > 6:
             self.participation_history.pop(0)
@@ -110,7 +80,6 @@ class TaskAdversary(BaseTradeTask):
             rng = random.Random(self._episode_seed + step_count)
             jitter = rng.uniform(-5.0, 5.0)
             return self.leakage_penalty_base + jitter
->>>>>>> gh/feature/planning-docs
         
         return 0.0
 
@@ -121,19 +90,6 @@ class TaskAdversary(BaseTradeTask):
         current_is: float,
         is_high_volatility: bool
     ) -> str:
-<<<<<<< HEAD
-        base = super().get_market_narrative(step_count, shares_remaining, current_is, is_high_volatility)
-        
-        # Check if adversary is currently detecting patterns
-        leakage = False
-        if len(self.participation_history) == 5:
-            if statistics.stdev(self.participation_history) < 0.005:
-                leakage = True
-        
-        if leakage:
-            return base + " ⚠️ ADVERSARY ALERT: HFT pattern detection isActive. Uniform trading is being penalized!"
-        return base + " ℹ️ Market status: Stealth preserved. No HFT pattern detection found."
-=======
         progress = (step_count / max(1, self.max_steps)) * 100
         
         # Recalculate metrics for narrative
@@ -162,4 +118,3 @@ class TaskAdversary(BaseTradeTask):
     
     def get_winning_secret(self) -> str:
         return "Stealth through variance. The adversary detects low-variance 'uniform' trading AND periodic 'alternating' patterns. Strategic secret: Jitter your rate between 0.05 and 0.15 every step to neutralize both StdDev and Autocorrelation detectors."
->>>>>>> gh/feature/planning-docs

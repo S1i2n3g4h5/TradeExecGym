@@ -1,22 +1,10 @@
-<<<<<<< HEAD
-import random
-from typing import Tuple
-=======
 from typing import Optional, Tuple
 import numpy as np
->>>>>>> gh/feature/planning-docs
 
 class VenueRouter:
     """Advanced Venue Router with Toxic Flow detection.
 
     Simulates the complex relationship between Dark Pools and Lit Venues:
-<<<<<<< HEAD
-    * **Dark Pool Fills:** High fill probability but fluctuates with volatility.
-    * **Toxic Flow:** Over-reliance on Dark Pools (high fractions) can lead to 
-      information leakage, causing litigation venue spreads to widen.
-    * **Liquidity Withdrawal:** During high volatility, dark fills drop significantly
-      as market makers pull their quotes.
-=======
     * **Dark Pool Fills:** High fill probability (~40% base) but degrades with
       volatility as market makers pull quotes (VIX-style penalty).
     * **Toxic Flow:** Routing > 50% of an order to dark pools on a single name
@@ -28,13 +16,10 @@ class VenueRouter:
     Determinism: Seeded via ``seed()`` at episode reset so that a fixed seed
     produces identical dark-pool outcomes across runs, matching the README
     claim that "all results are deterministic".
->>>>>>> gh/feature/planning-docs
     """
 
     def __init__(self, dark_fill_prob: float = 0.40):
         self.base_dark_fill_prob = dark_fill_prob
-<<<<<<< HEAD
-=======
         # Use a dedicated numpy RNG for full reproducibility — seeded per episode
         self._rng = np.random.default_rng(seed=None)
 
@@ -48,7 +33,6 @@ class VenueRouter:
             seed: Integer seed, or None for non-deterministic behaviour.
         """
         self._rng = np.random.default_rng(seed=seed)
->>>>>>> gh/feature/planning-docs
 
     def route_order(
         self,
@@ -58,9 +42,6 @@ class VenueRouter:
         current_price: float,
         volatility: float = 0.02
     ) -> Tuple[int, int, float, float, float]:
-<<<<<<< HEAD
-        """Route an order and return fill details."""
-=======
         """Route an order across dark pool and lit venues and return fill details.
 
         Args:
@@ -78,7 +59,6 @@ class VenueRouter:
               - lit_price: Lit fill price before temp impact is applied.
               - additional_slippage_bps: Extra slippage from toxic-flow leakage (0 or 8.5 bps).
         """
->>>>>>> gh/feature/planning-docs
         # Type safety and missing value handling
         use_dark_pool = bool(use_dark_pool)
         dark_pool_fraction = float(dark_pool_fraction or 0.0)
@@ -94,27 +74,6 @@ class VenueRouter:
         if not use_dark_pool or shares_to_fill <= 0:
             return 0, shares_to_fill, current_price, current_price, 0.0
 
-<<<<<<< HEAD
-        # 1. Dynamic Fill Prob: Vix-style penalty
-        vol_penalty = max(0.0, (volatility - 0.02) * 10.0) 
-        effective_prob = max(0.05, self.base_dark_fill_prob - vol_penalty)
-
-        # 2. Toxic Flow Detection
-        # Routing > 50% to dark pools on a single name is often 'toxic'
-        # Adversaries see the IOIs and front-run the lit leg.
-        if dark_pool_fraction > 0.50:
-            leakage_prob = (dark_pool_fraction - 0.5) * 0.5
-            if random.random() < leakage_prob:
-                additional_slippage = 8.5 # 8.5 bps penalty for information leakage
-
-        # 3. Execution
-        dark_target = int(shares_to_fill * min(1.0, dark_pool_fraction))
-        if random.random() < effective_prob:
-            dark_filled = dark_target
-            lit_filled = shares_to_fill - dark_filled
-        else:
-            # Dark pool missed (unfilled IOI)
-=======
         # 1. Dynamic Fill Prob: VIX-style penalty — dark liquidity evaporates during vol spikes
         vol_penalty = max(0.0, (volatility - 0.02) * 10.0)
         effective_prob = max(0.05, self.base_dark_fill_prob - vol_penalty)
@@ -134,7 +93,6 @@ class VenueRouter:
             lit_filled = shares_to_fill - dark_filled
         else:
             # Dark pool missed — unfilled IOI falls back to lit venue
->>>>>>> gh/feature/planning-docs
             dark_filled = 0
             lit_filled = shares_to_fill
 

@@ -1,9 +1,6 @@
 from .base_task import BaseTradeTask
 
 class TaskVolatileExecution(BaseTradeTask):
-<<<<<<< HEAD
-    """Buy 400K shares under 3x volatility with dark pool access. Hard."""
-=======
     """Buy 400,000 shares under 3× normal volatility using dark pool access.
 
     Sigma is 0.06 (vs 0.02 baseline) — price swings are 3× larger each step.
@@ -15,7 +12,6 @@ class TaskVolatileExecution(BaseTradeTask):
     Difficulty: Hard.
     Target IS: < 30 bps (beat TWAP). Elite: < 14 bps (beat AC Optimal).
     """
->>>>>>> gh/feature/planning-docs
 
     def __init__(self):
         super().__init__()
@@ -23,10 +19,6 @@ class TaskVolatileExecution(BaseTradeTask):
         self.total_shares = 400_000
         self.max_steps = 90
         self.arrival_price = 150.0
-<<<<<<< HEAD
-        self.sigma = 0.06  # 3x volatility
-        self.description = "Buy 400K shares under 3x volatility with dark pool access. Hard difficulty."
-=======
         self.sigma = 0.06  # 3x volatility vs baseline
         self.description = "Buy 400K shares under 3x volatility with dark pool access. Hard difficulty."
 
@@ -105,4 +97,3 @@ class TaskVolatileExecution(BaseTradeTask):
             f"[Task 3 | {progress_pct:.0f}% done | {shares_remaining:,} shares left] "
             f"{vol_warning} {dp_hint} {is_hint}{urgency}"
         )
->>>>>>> gh/feature/planning-docs

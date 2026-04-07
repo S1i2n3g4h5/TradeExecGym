@@ -13,13 +13,10 @@ class BaseTradeTask(ABC):
         self.sigma: float = 0.02
         self.description: str = "Base trading task."
 
-<<<<<<< HEAD
-=======
     def reset(self) -> None:
         """Override in tasks with episode-level state (e.g. participation history)."""
         pass
 
->>>>>>> gh/feature/planning-docs
     def on_trade_step(
         self,
         step_count: int,
@@ -52,8 +49,6 @@ class BaseTradeTask(ABC):
             f"Current IS: {current_is:.2f} bps."
         )
 
-<<<<<<< HEAD
-=======
     def get_winning_secret(self) -> str:
         """
         Provides a high-level strategic hint unique to this task.
@@ -61,34 +56,12 @@ class BaseTradeTask(ABC):
         """
         return "Steady execution is the key to beating generic baselines."
 
->>>>>>> gh/feature/planning-docs
     def get_grader_score(
         self, 
         shares_executed: int, 
         total_shares: int, 
         current_is: float,
         twap_is: float, 
-<<<<<<< HEAD
-        vwap_is: float
-    ) -> float:
-        """
-        Deterministic grader: 0.0–1.0.
-        Default implementation:
-          40% completion quality (need ≥98% filled)
-          40% IS quality
-          10% beat TWAP
-          10% beat VWAP
-        """
-        completion = shares_executed / max(1, total_shares)
-        c_score = min(completion / 0.98, 1.0) * 0.40
-
-        is_score = max(0.0, 1.0 - current_is / 50.0) * 0.40
-
-        twap_bonus = 0.10 if current_is < twap_is else 0.0
-        vwap_bonus = 0.10 if current_is < vwap_is else 0.0
-
-        return round(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0), 1.0), 4)
-=======
         vwap_is: float,
         ac_is: float = 14.0
     ) -> float:
@@ -115,4 +88,3 @@ class BaseTradeTask(ABC):
         vwap_bonus = 0.10 if current_is < vwap_is else 0.0
 
         return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0001), 0.9999)), 4)
->>>>>>> gh/feature/planning-docs

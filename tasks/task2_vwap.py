@@ -1,9 +1,6 @@
 from .base_task import BaseTradeTask
 
 class TaskVwapOptimizer(BaseTradeTask):
-<<<<<<< HEAD
-    """Sell 250K shares in 60 steps with U-shaped volume profile. Beat VWAP."""
-=======
     """Sell 250,000 shares in 60 steps by riding the intraday volume profile.
 
     VWAP (Volume-Weighted Average Price) weights execution toward high-volume
@@ -14,7 +11,6 @@ class TaskVwapOptimizer(BaseTradeTask):
     Difficulty: Medium.
     Target IS: < 20 bps (beat VWAP). Elite: < 14 bps (beat AC Optimal).
     """
->>>>>>> gh/feature/planning-docs
 
     def __init__(self):
         super().__init__()
@@ -24,8 +20,6 @@ class TaskVwapOptimizer(BaseTradeTask):
         self.arrival_price = 150.0
         self.sigma = 0.02
         self.description = "Sell 250K shares in 60 steps with U-shaped volume profile. Beat VWAP. Medium difficulty."
-<<<<<<< HEAD
-=======
 
     def get_winning_secret(self) -> str:
         return "Riding the U-Curve: VWAP benchmarks weight by volume. Accelerate your rate at Step 1-10 and Step 50-60. Minimise trades during the 'Midday Lull' (Step 20-40) when liquidity is thinnest."
@@ -106,4 +100,3 @@ class TaskVwapOptimizer(BaseTradeTask):
             f"[Task 2 | {progress_pct:.0f}% done | {shares_remaining:,} shares left] "
             f"{session_hint} {pace_hint} {is_hint}{urgency}"
         )
->>>>>>> gh/feature/planning-docs

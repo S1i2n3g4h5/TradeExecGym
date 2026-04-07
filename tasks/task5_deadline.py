@@ -1,9 +1,6 @@
 from .base_task import BaseTradeTask
 
 class TaskDeadlinePressure(BaseTradeTask):
-<<<<<<< HEAD
-    """Buy 1M shares. Remaining inventory at deadline -> 10x impact penalty."""
-=======
     """Buy 1,000,000 shares in exactly 80 steps. Completion is mandatory.
 
     Any episode that ends with < 99.9% fill receives a grader score of 0.0.
@@ -18,7 +15,6 @@ class TaskDeadlinePressure(BaseTradeTask):
     Difficulty: Expert.
     Pass condition: ≥ 99.9% completion. Score: 0.3 (base) + IS quality + baseline beats.
     """
->>>>>>> gh/feature/planning-docs
 
     def __init__(self):
         super().__init__()
@@ -29,8 +25,6 @@ class TaskDeadlinePressure(BaseTradeTask):
         self.sigma = 0.02
         self.description = "Buy 1M shares. Extreme deadline pressure. Completion required."
 
-<<<<<<< HEAD
-=======
     def get_market_narrative(
         self,
         step_count: int,
@@ -102,19 +96,14 @@ class TaskDeadlinePressure(BaseTradeTask):
     def get_winning_secret(self) -> str:
         return "[DIRECTIVE] Conquer the 'Cliff': Score is strictly 0.0001 unless >99.9% is filled. [DIRECTIVE] Strategic secret: Front-load heavily (rate 0.15+) in steps 1-40 to clear the completion gate early. IS is secondary to completion."
 
->>>>>>> gh/feature/planning-docs
     def get_grader_score(
         self, 
         shares_executed: int, 
         total_shares: int, 
         current_is: float,
         twap_is: float, 
-<<<<<<< HEAD
-        vwap_is: float
-=======
         vwap_is: float,
         ac_is: float = 14.0
->>>>>>> gh/feature/planning-docs
     ) -> float:
         """
         Severe penalty if completion is < 99.9%.
@@ -123,17 +112,6 @@ class TaskDeadlinePressure(BaseTradeTask):
         completion = shares_executed / max(1, total_shares)
         
         if completion < 0.999:
-<<<<<<< HEAD
-            return 0.0
-
-        # Normal grading math, heavily favoring VWAP/TWAP beat
-        is_score = max(0.0, 1.0 - current_is / 50.0) * 0.40
-        twap_bonus = 0.15 if current_is < twap_is else 0.0
-        vwap_bonus = 0.15 if current_is < vwap_is else 0.0
-
-        # Base completion yields 0.3 for meeting the deadline
-        return round(min(max(0.3 + is_score + twap_bonus + vwap_bonus, 0.0), 1.0), 4)
-=======
             # Soft penalty instead of hard 0.0 (keeps it hard but strictly > 0)
             soft_score = completion * 0.15
             return round(float(max(soft_score, 0.0001)), 4)
@@ -150,5 +128,4 @@ class TaskDeadlinePressure(BaseTradeTask):
         vwap_bonus = 0.10 if current_is < vwap_is else 0.0
 
         return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0001), 0.9999)), 4)
->>>>>>> gh/feature/planning-docs
 
