@@ -364,25 +364,80 @@ async def run_auto_simulation(display_name, mode, seed=42):
         elif "Adversarial" in display_name: max_steps = 120
         elif "Deadline" in display_name: max_steps = 80
 
+        # Task-specific config for correct heuristic calculation
+        TASK_SHARES = {
+            "task1_twap_beater": 100_000,
+            "task2_vwap_optimizer": 250_000,
+            "task3_volatile_execution": 400_000,
+            "task4_adversarial": 200_000,
+            "task5_deadline_pressure": 1_000_000,
+        }
+        total_shares = TASK_SHARES.get(task_id, 100_000)
+        ADV_PER_STEP = 10_000_000 / 780
+        h = AlmgrenChrissHeuristic()
+        shares_remaining = total_shares  # local tracking for heuristic
+
         done = False
         step = 0
         while not done and step < max_steps:
+            steps_left = max(1, max_steps - step)
             rate = 0.05
             use_dark = False
             dark_frac = 0.0
 
             if mode == "Volume-Weighted (VWAP)":
+                # U-shaped intraday volume: heavy at open/close, light midday
                 p = step / max(1, max_steps)
                 vol_ratio = 1.6 if p < 0.20 else (0.5 if p < 0.8 else 1.8)
-                rate = min(0.25, max(0.01, 0.05 * vol_ratio))
+                twap_base = shares_remaining / (steps_left * ADV_PER_STEP)
+                rate = min(0.25, max(0.01, twap_base * vol_ratio))
+
             elif mode == "Optimal Heuristic (Math)":
-                h = AlmgrenChrissHeuristic()
-                rate = h.calculate_rate(800_000 * (1 - step / max_steps), 1_000_000, max_steps - step, 0.0)
+                # Pure Almgren-Chriss mathematical optimum
+                rate = h.calculate_rate(
+                    shares_remaining=max(1, shares_remaining),
+                    total_shares=total_shares,
+                    steps_left=steps_left,
+                    current_is=0.0
+                )
+                rate = max(0.01, min(0.25, rate))
+
             elif mode == "Hybrid (Heuristic + LLM)":
-                h = AlmgrenChrissHeuristic()
-                rate = h.calculate_rate(800_000 * (1 - step / max_steps), 1_000_000, max_steps - step, 0.0)
-                if os.environ.get("HF_TOKEN"):
-                    rate *= 1.1  # Dummy LLM 'Aggressive' bias for the demo
+                # Math base + context-aware LLM-style adjustments (distinct from pure heuristic)
+                import random as _rnd
+                base_rate = h.calculate_rate(
+                    shares_remaining=max(1, shares_remaining),
+                    total_shares=total_shares,
+                    steps_left=steps_left,
+                    current_is=0.0
+                )
+                base_rate = max(0.01, min(0.25, base_rate))
+                pct_remaining = shares_remaining / max(1, total_shares)
+                pct_time_left = steps_left / max(1, max_steps)
+
+                # LLM cognitive layer decisions:
+                if pct_remaining > 0.60 and pct_time_left < 0.35:
+                    # ACCELERATE — dangerously behind schedule
+                    rate = min(0.25, base_rate * 1.6)
+                elif "adversarial" in task_id:
+                    # RANDOMIZE — evade HFT pattern detection
+                    rate = min(0.25, base_rate * _rnd.uniform(0.6, 1.4))
+                    use_dark = True
+                    dark_frac = 0.3
+                elif "volatile" in task_id:
+                    # DECELERATE + DARK POOL — reduce market impact in volatility
+                    rate = min(0.25, base_rate * 0.80)
+                    use_dark = True
+                    dark_frac = 0.4
+                elif "deadline" in task_id and pct_time_left < 0.5:
+                    # ACCELERATE hard for deadline task in second half
+                    rate = min(0.25, base_rate * 1.4)
+                else:
+                    rate = base_rate  # APPROVE suggestion
+
+            # Update local share estimate for next step
+            shares_filled = min(shares_remaining, int(rate * ADV_PER_STEP))
+            shares_remaining = max(0, shares_remaining - shares_filled)
 
             result = await client.execute_trade(
                 participation_rate=rate,
