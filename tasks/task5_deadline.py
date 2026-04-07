@@ -94,7 +94,7 @@ class TaskDeadlinePressure(BaseTradeTask):
         )
 
     def get_winning_secret(self) -> str:
-        return "Conquer the 'Cliff': Score is 0.0 unless >99.9% is filled. Strategic secret: Front-load heavily (rate 0.15+) in steps 1-40 to clear the completion gate. IS only matters if the deadline is met."
+        return "[DIRECTIVE] Conquer the 'Cliff': Score is strictly 0.0001 unless >99.9% is filled. [DIRECTIVE] Strategic secret: Front-load heavily (rate 0.15+) in steps 1-40 to clear the completion gate early. IS is secondary to completion."
 
     def get_grader_score(
         self, 
@@ -112,8 +112,10 @@ class TaskDeadlinePressure(BaseTradeTask):
         completion = shares_executed / max(1, total_shares)
         
         if completion < 0.999:
-            return 0.0
-
+            # Soft penalty instead of hard 0.0 (keeps it hard but strictly > 0)
+            soft_score = completion * 0.15
+            return round(float(max(soft_score, 0.0001)), 4)
+        
         # Normal grading math: benchmarked against AC Optimal (50% weight)
         is_ratio = current_is / max(1.0, ac_is)
         # Score is 100% if IS <= AC, drops to 0% if IS is 3x larger than AC
@@ -125,5 +127,5 @@ class TaskDeadlinePressure(BaseTradeTask):
         twap_bonus = 0.10 if current_is < twap_is else 0.0
         vwap_bonus = 0.10 if current_is < vwap_is else 0.0
 
-        return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0), 1.0)), 4)
+        return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0001), 0.9999)), 4)
 

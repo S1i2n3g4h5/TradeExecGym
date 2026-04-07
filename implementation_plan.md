@@ -57,6 +57,15 @@ To prove the environment is "not buggy" and "fair," we implement the following v
 - [x] **Determinism Tests**: Verify `same seed = same results`.
 - [x] **Edge Case Suite**: Zero participation, Over-execution, Late-rush penalty validation.
 
+### Phase 6: Agentic Evaluation Fixes (Validator Range & LLM Nudges)
+- **Scoring Logic**:
+    - [ ] Update `BaseTradeTask` to clamp all grader scores to `[0.0001, 0.9999]` (Strictly exclusive).
+    - [ ] Update `TaskDeadlinePressure` to replace hard `0.0` with `0.0001` floor.
+- **LLM Actionability (The "Wait" Fix)**:
+    - [ ] **Crucial**: Inject a `SUGGESTED ACTION` block into `get_market_state` narrative using `AlmgrenChrissHeuristic`.
+    - [ ] **Anchor Prompt**: Tell the agent that `rate=0.0` is purely passive and incurs high opportunity cost.
+    - [ ] Update all 5 tasks' narratives to be more "command-centric" (e.g. "DIRECTIVE: Increase rate to 0.10").
+
 ---
 
 ## 🚀 Phase 6: X-Factor Addons (Optional/End-of-Build)

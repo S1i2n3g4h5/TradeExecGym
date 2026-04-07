@@ -22,11 +22,12 @@ from fastmcp import FastMCP
 from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.types import Action, Observation, State
 
-# Phase 2 components
+# Phase 2 components
 try:
     from env.price_model import PriceModel
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
+    from baselines.heuristic_agent import AlmgrenChrissHeuristic
 except ImportError:
     import sys
     import os
@@ -34,6 +35,7 @@ except ImportError:
     from env.price_model import PriceModel
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
+    from baselines.heuristic_agent import AlmgrenChrissHeuristic
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ from tasks.factory import get_task
 
 # Average daily volume (shares/day). Used for participation rate → shares.
 ADV_SHARES = 10_000_000
+ADV_PER_STEP = ADV_SHARES / 780  # 780 30-sec intervals in a 6.5h session
 
 
 class TradeExecEnvironment(MCPEnvironment):
@@ -70,12 +73,14 @@ class TradeExecEnvironment(MCPEnvironment):
 
         self.price_model: PriceModel = None
         self.venue_router: VenueRouter = None
+        self.heuristic = AlmgrenChrissHeuristic()
         self._last_reward: float = 0.0
 
         # Phase 1: Shadow Baseline Caching
         self._baseline_cache: dict[int, dict[str, float]] = {}
         self._last_cache_seed: Optional[int] = None
         self._milestones_reached: set[float] = set()
+        self._last_suggested_rate: float = 0.05
 
         # Build FastMCP server with 4 tools (refactor: class methods)
         mcp = FastMCP("trade_exec_gym")
@@ -207,6 +212,7 @@ class TradeExecEnvironment(MCPEnvironment):
                 "total_shares": self._total_shares,
                 "max_steps": self._max_steps,
                 "arrival_price": self._arrival_price,
+                "suggested_participation_rate": self._last_suggested_rate,
             },
         )
 
@@ -256,12 +262,34 @@ class TradeExecEnvironment(MCPEnvironment):
         session = self._intraday_session()
         dark_avail = self._total_shares >= 50_000
 
-        pace_hint = ""
+        # 1. Suggested rate (Almgren-Chriss optimal)
+        suggested_rate = self.heuristic.calculate_rate(
+            shares_remaining=self._shares_remaining,
+            total_shares=self._total_shares,
+            steps_left=steps_left,
+            current_is=current_is
+        )
+        self._last_suggested_rate = suggested_rate
+
+        # 2. Pace warning (critical for Tasks with completion gates)
+        pace_alert = ""
         if steps_left > 0 and self._shares_remaining > 0:
-            needed = self._shares_remaining / steps_left
-            pace_hint = f"\nPace needed: {needed:,.0f} shares/step to complete on time."
-        if steps_left <= max(5, int(self._max_steps * 0.30)) and self._shares_remaining > 0:
-            pace_hint += f"\n⚠️  URGENT: Only {steps_left} steps left — accelerate!"
+            # Linear completion forecast at current average rate (or 0.05 if no steps taken)
+            avg_rate = (self._shares_executed / self._step_count) if self._step_count > 0 else 0
+            # How many shares would we finish at current participation rate?
+            target_step_shares = self._last_suggested_rate * ADV_PER_STEP * vol_ratio
+            forecast_finish = self._shares_executed + (target_step_shares * steps_left)
+            finish_pct = (forecast_finish / self._total_shares) * 100
+            
+            # Minimum required per step to finish exactly
+            min_req_shares = self._shares_remaining / steps_left
+            min_req_rate = min_req_shares / (ADV_PER_STEP * vol_ratio)
+            
+            if finish_pct < 99.0:
+                pace_alert = (
+                    f"\n⚠️  PACE ALERT: At suggested fill rate you will complete ~{finish_pct:.0f}%.\n"
+                    f"    MINIMUM REQUIRED: rate ≥ {min_req_rate:.3f} every remaining step to avoid completion failure."
+                )
 
         vs_twap = (
             f"✅ Beating TWAP by {twap_is - current_is:.1f} bps"
@@ -277,7 +305,9 @@ class TradeExecEnvironment(MCPEnvironment):
         )
 
         return (
-            f"MARKET STATE — Step {self._step_count}/{self._max_steps}\n"
+            f"⚡ REMINDER: participation_rate=0.0 = 0 shares traded this step.\n"
+            f"   Unexecuted shares at deadline = severe score penalty.\n"
+            f"\nMARKET STATE — Step {self._step_count}/{self._max_steps}\n"
             f"{'─'*52}\n"
             f"NARRATIVE: {narrative}\n"
             f"\nINVENTORY\n"
@@ -290,14 +320,14 @@ class TradeExecEnvironment(MCPEnvironment):
             f"  Spread:        {spread_bps:.1f} bps\n"
             f"\nMARKET CONDITIONS\n"
             f"  Volume Ratio: {vol_ratio:.2f}×  (1.0 = normal daily avg)\n"
-            f"  Session:      {session}  (open/midday/close)\n"
-            f"  Dark Pool:    {'✅ Available (~40% fill rate)' if dark_avail else '❌ Not available'}\n"
+            f"  Session:      {session}\n"
+            f"  Dark Pool:    {'✅ Available' if dark_avail else '❌ Not available'}\n"
             f"\nPERFORMANCE  (IS = basis points, lower = better)\n"
             f"  Your IS:   {current_is:.2f} bps   {vs_twap}\n"
             f"  TWAP IS:   {twap_is:.2f} bps\n"
-            f"  VWAP IS:   {vwap_is:.2f} bps{pace_hint}\n"
-            f"\nACTION: execute_trade(participation_rate=X)\n"
-            f"  Suggested: 0.01–0.05 (passive) | 0.10–0.20 (aggressive)"
+            f"  VWAP IS:   {vwap_is:.2f} bps{pace_alert}\n"
+            f"\n👉 SUGGESTED ACTION: participation_rate={suggested_rate:.3f}\n"
+            f"   (Almgren-Chriss optimal for current inventory/time remaining)"
         )
 
     def _build_baseline_text(self) -> str:
@@ -653,7 +683,7 @@ class TradeExecEnvironment(MCPEnvironment):
         This weighting reflects real-world SOR performance attribution — IS quality matters
         most, but an unfilled order is an operational failure regardless of slippage.
         """
-        return self.active_task.get_grader_score(
+        raw_score = self.active_task.get_grader_score(
             shares_executed=self._shares_executed,
             total_shares=self._total_shares,
             current_is=self._compute_current_is(),
@@ -661,3 +691,5 @@ class TradeExecEnvironment(MCPEnvironment):
             vwap_is=self._vwap_is_at_step(),
             ac_is=self._ac_optimal_is()
         )
+        # Final environmental safety-net clamp for (0, 1) exclusive compliance
+        return round(float(min(max(raw_score, 0.0001), 0.9999)), 4)

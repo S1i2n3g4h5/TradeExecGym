@@ -7,14 +7,9 @@ from agents import HeuristicAgent, HybridAgent
 from server.scenario_engine import ScenarioEngine
 from server.scenario_definitions import SCENARIOS
 
-# ── STATE MANAGEMENT (HONEY-STYLE) ──────────────────────────────────────────
-class UIState:
-    def __init__(self):
-        self.reasoning = ""
-        self.status = "🟢 READY"
-        self.is_processing = False
-
-state = UIState()
+# ── STATE MANAGEMENT ────────────────────────────────────────────────────────
+# No global state objects or os.environ for session tracking.
+# Using gr.State() within create_gradio_ui for session safety on HuggingFace.
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
@@ -1261,32 +1256,24 @@ def create_gradio_ui(env_factory):
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
 
-        # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict)
-        base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
-
-        # ⚠️ Agent outputs disabled for stability on HuggingFace ⚠️
-        # h_outputs = [...]
-        # ai_outputs = [...]
+        # dashboard_vals (14): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict), reasoning(state), status(state)
+        base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats, session_reasoning, session_status]
 
         all_outputs = base_outputs 
 
         # Agent Instances
-        h_agent = HeuristicAgent()
-        ai_agent = HybridAgent()
+        # Session-specific state tracking for HuggingFace stability
+        session_reasoning = gr.State("System initialized.")
+        session_status = gr.State("🟢 READY")
 
-        async def get_status(reasoning=None, status=None):
+        async def get_status(reasoning=None, status=None, current_reasoning=None, current_status=None):
             """Return a single snapshot of all dashboard outputs.
 
-            IMPORTANT – HuggingFace Spaces compatibility:
-            This MUST be a regular async function (single return), NOT an async
-            generator (yield).  The previous double-yield pattern created dangling
-            generator state that blocked the Gradio event queue when the user
-            switched tabs — the pending second yield could never be delivered
-            after a tab change cancelled the WebSocket frame, causing a permanent
-            UI freeze.
+            Using gr.State for reasoning/status to ensure session-isolation 
+            on HuggingFace Spaces.
             """
-            if reasoning is not None: state.reasoning = reasoning
-            if status is not None: state.status = status
+            active_reasoning = reasoning if reasoning is not None else current_reasoning
+            active_status = status if status is not None else current_status
             
             env = env_factory()
             obs = env.get_observation()
@@ -1302,19 +1289,20 @@ def create_gradio_ui(env_factory):
             out_history = format_action_history(metadata)
             out_json = prettify_observation_json(obs)
             
-            # Agent Reasoning Integration
-            os.environ["CURRENT_AGENT_REASONING"] = state.reasoning
+            # HUD formatting
             out_hud = format_hud(obs, metadata)
             
-            return [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
+            return [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata, active_reasoning, active_status]
 
-        async def handle_reset(tid):
+        async def handle_reset(tid, current_reasoning, current_status):
             env = env_factory()
+            # Note: FARMING_TASK_ID environment variable is still used by some
+            # low-level env logic, but we scope the reset here.
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
             return await get_status(reasoning="Environment Reset.", status="🟢 READY")
 
-        async def handle_action(action_type, p_id, qty, s_type):
+        async def handle_action(action_type, p_id, qty, s_type, current_reasoning, current_status):
             env = env_factory()
             action = {"action_type": action_type}
             if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds", "end_day"]:
@@ -1326,57 +1314,59 @@ def create_gradio_ui(env_factory):
                 action["seed_type"] = s_type
             
             env.step(action)
-            return await get_status(status=f"DONE: {action_type.upper()}")
+            return await get_status(status=f"DONE: {action_type.upper()}", current_reasoning=current_reasoning)
 
-        async def get_initial_status():
+        async def get_initial_status(current_reasoning, current_status):
             return await get_status(reasoning="System initialized.", status="🟢 READY")
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
         # On startup: only hydrate Dashboard.
-        ui.load(get_initial_status, outputs=base_outputs)
+        ui.load(get_initial_status, inputs=[session_reasoning, session_status], outputs=base_outputs)
 
         # Dashboard action buttons — update only Dashboard outputs
-        reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
+        reset_btn.click(handle_reset, inputs=[task_id_input, session_reasoning, session_status], outputs=base_outputs)
         
         # We need a small wrapper for buttons to inject the fixed command name
-        async def do_wait(p, q, s):
-            return await handle_action("wait", p, q, s)
-        async def do_buy(p, q, s):
-            return await handle_action("buy_seeds", p, q, s)
-        async def do_pump(p, q, s):
-            return await handle_action("pump_water", p, q, s)
-        async def do_end_day(p, q, s):
-            return await handle_action("end_day", p, q, s)
-        async def do_plant(p, q, s):
-            return await handle_action("plant", p, q, s)
-        async def do_irrigate(p, q, s):
-            return await handle_action("irrigate", p, q, s)
-        async def do_harvest(p, q, s):
-            return await handle_action("harvest", p, q, s)
-        async def do_clear(p, q, s):
-            return await handle_action("clear", p, q, s)
-        async def do_fertilize(p, q, s):
-            return await handle_action("apply_fertilizer", p, q, s)
-        async def do_spray(p, q, s):
-            return await handle_action("spray_pesticide", p, q, s)
-        async def do_pull_weeds(p, q, s):
-            return await handle_action("pull_weeds", p, q, s)
-        async def do_sell(p, q, s):
-            return await handle_action("sell", p, q, s)
+        async def do_wait(p, q, s, r, st):
+            return await handle_action("wait", p, q, s, r, st)
+        async def do_buy(p, q, s, r, st):
+            return await handle_action("buy_seeds", p, q, s, r, st)
+        async def do_pump(p, q, s, r, st):
+            return await handle_action("pump_water", p, q, s, r, st)
+        async def do_end_day(p, q, s, r, st):
+            return await handle_action("end_day", p, q, s, r, st)
+        async def do_plant(p, q, s, r, st):
+            return await handle_action("plant", p, q, s, r, st)
+        async def do_irrigate(p, q, s, r, st):
+            return await handle_action("irrigate", p, q, s, r, st)
+        async def do_harvest(p, q, s, r, st):
+            return await handle_action("harvest", p, q, s, r, st)
+        async def do_clear(p, q, s, r, st):
+            return await handle_action("clear", p, q, s, r, st)
+        async def do_fertilize(p, q, s, r, st):
+            return await handle_action("apply_fertilizer", p, q, s, r, st)
+        async def do_spray(p, q, s, r, st):
+            return await handle_action("spray_pesticide", p, q, s, r, st)
+        async def do_pull_weeds(p, q, s, r, st):
+            return await handle_action("pull_weeds", p, q, s, r, st)
+        async def do_sell(p, q, s, r, st):
+            return await handle_action("sell", p, q, s, r, st)
 
-        wait_btn.click(do_wait, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        buy_btn.click(do_buy, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        pump_btn.click(do_pump, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        end_day_btn.click(do_end_day, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        plant_btn.click(do_plant, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        irrigate_btn.click(do_irrigate, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        harvest_btn.click(do_harvest, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        clear_btn.click(do_clear, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        fertilize_btn.click(do_fertilize, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        spray_btn.click(do_spray, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        pull_weeds_btn.click(do_pull_weeds, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        sell_btn.click(do_sell, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        action_inputs = [plot_selector, quantity, seed_type, session_reasoning, session_status]
+        
+        wait_btn.click(do_wait, inputs=action_inputs, outputs=base_outputs)
+        buy_btn.click(do_buy, inputs=action_inputs, outputs=base_outputs)
+        pump_btn.click(do_pump, inputs=action_inputs, outputs=base_outputs)
+        end_day_btn.click(do_end_day, inputs=action_inputs, outputs=base_outputs)
+        plant_btn.click(do_plant, inputs=action_inputs, outputs=base_outputs)
+        irrigate_btn.click(do_irrigate, inputs=action_inputs, outputs=base_outputs)
+        harvest_btn.click(do_harvest, inputs=action_inputs, outputs=base_outputs)
+        clear_btn.click(do_clear, inputs=action_inputs, outputs=base_outputs)
+        fertilize_btn.click(do_fertilize, inputs=action_inputs, outputs=base_outputs)
+        spray_btn.click(do_spray, inputs=action_inputs, outputs=base_outputs)
+        pull_weeds_btn.click(do_pull_weeds, inputs=action_inputs, outputs=base_outputs)
+        sell_btn.click(do_sell, inputs=action_inputs, outputs=base_outputs)
         # ── Stress Test Logic ───────────────────────────────────────────
         
         async def run_stress_test(token, model, seed, agent_type, diff):
@@ -1414,7 +1404,7 @@ def create_gradio_ui(env_factory):
                         r["status"], r["duration"]
                     ])
                     yield gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.1)
 
         st_run_btn.click(
             run_stress_test, 

@@ -30,9 +30,15 @@ EVAL_TASKS = [
 ]
 
 HYBRID_SYSTEM_PROMPT = """
-You are the Cognitive Layer of a Hybrid Smart Order Router. 
-The Mathematical Layer has already calculated an 'Optimal participation_rate' based on inventory physics.
-Respond ONLY with a JSON object: {"recommendation": "Approve|Accelerate|Decelerate|Randomize", "reason": "reasoning text"}
+You are an institutional trade execution agent.
+Your ONLY job is to minimize Implementation Shortfall (IS) in basis points.
+
+CRITICAL RULES:
+1. You MUST trade every step. participation_rate=0.0 means NO shares traded.
+2. The environment will suggest a rate. Use it as your baseline — not 0.0.
+3. Respond ONLY with JSON: {"rate_multiplier": 1.0, "reason": "..."}
+   where rate_multiplier ∈ [0.5, 2.0] applied to the suggested rate.
+4. If unsure, return rate_multiplier=1.0 (approve the suggestion).
 """
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -85,13 +91,15 @@ async def run_hybrid_inference():
 
                 final_rate = suggested_rate
                 if HF_TOKEN:
-                    try:
                         resp = await asyncio.wait_for(
                             llm_client.chat.completions.create(
                                 model=MODEL_NAME,
                                 messages=[
                                     {"role": "system", "content": HYBRID_SYSTEM_PROMPT},
-                                    {"role": "user", "content": f"State: {state_text}\nRate: {suggested_rate}"}
+                                    {
+                                        "role": "user", 
+                                        "content": f"State: {state_text}\n\n👉 Current Suggested Rate: {suggested_rate:.4f} (Baseline)"
+                                    }
                                 ],
                                 max_tokens=128,
                                 response_format={"type": "json_object"}
@@ -99,10 +107,10 @@ async def run_hybrid_inference():
                             timeout=10.0
                         )
                         decision = json.loads(resp.choices[0].message.content)
-                        rec = decision.get("recommendation", "Approve")
-                        if rec == "Accelerate": final_rate *= 1.4
-                        elif rec == "Decelerate": final_rate *= 0.6
-                        elif rec == "Randomize": final_rate *= 1.15
+                        multiplier = float(decision.get("rate_multiplier", 1.0))
+                        # Clamp multiplier to [0.5, 2.0] for safety
+                        multiplier = max(0.5, min(2.0, multiplier))
+                        final_rate = suggested_rate * multiplier
                     except: pass
 
                 execute_result = await env_client.execute_trade(participation_rate=final_rate)

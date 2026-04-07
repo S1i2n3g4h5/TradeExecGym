@@ -87,4 +87,4 @@ class BaseTradeTask(ABC):
         twap_bonus = 0.10 if current_is < twap_is else 0.0
         vwap_bonus = 0.10 if current_is < vwap_is else 0.0
 
-        return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0), 1.0)), 4)
+        return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0001), 0.9999)), 4)
