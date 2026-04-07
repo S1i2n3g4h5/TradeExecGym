@@ -14,6 +14,7 @@ import gradio as gr
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+plt.switch_backend('Agg') # CRITICAL: Prevent crashes in headless Docker/HF Space
 from openai import AsyncOpenAI
 # Add root to sys.path to resolve local imports like `client` and `baselines`
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -260,7 +261,8 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
         return
 
     client = TradeExecClient(base_url="http://localhost:7865")
-    llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://api-inference.huggingface.co/v1/")
+    # Update to official HF model gateway
+    llm_client = AsyncOpenAI(api_key=hf_token, base_url="https://huggingface.co/v1/")
     heuristic = AlmgrenChrissHeuristic()
     task_id = TASK_ID_MAP.get(display_name, "task1_twap_beater")
     

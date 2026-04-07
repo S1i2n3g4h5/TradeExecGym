@@ -1,5 +1,5 @@
 # OpenEnv Server Manifest
-spec_version: 1
+spec_version: "1"
 environment:
   name: "trade_exec_gym"
   description: "Smart Order Router RL Environment. Execute block trades minimizing Implementation Shortfall."

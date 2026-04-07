@@ -19,7 +19,7 @@ from baselines.heuristic_agent import AlmgrenChrissHeuristic
 # MANDATORY ENVIRONMENT CONFIGURATION
 # ==============================================================================
 # The inference script must use these variables as per the submission spec
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://api-inference.huggingface.co/v1/"
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://huggingface.co/v1/"
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Meta-Llama-3-70B-Instruct"
 HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") # For docker-based local testing
@@ -126,17 +126,18 @@ async def run_hybrid_inference():
                         pass
 
                 final_rate = suggested_rate
-                
-                # LLM Multiplier Pattern: Bridge the async loop to sync OpenAI client
+
+                # LLM Multiplier Pattern: only invoke if HF_TOKEN is available
+                # CRITICAL: Sync OpenAI wrapped in asyncio.to_thread — never blocks event loop
                 if HF_TOKEN and HF_TOKEN != "dummy":
                     try:
-                        # Synchronous OpenAI call within the task loop
-                        completion = llm_client.chat.completions.create(
+                        completion = await asyncio.to_thread(
+                            llm_client.chat.completions.create,
                             model=MODEL_NAME,
                             messages=[
                                 {"role": "system", "content": HYBRID_SYSTEM_PROMPT},
                                 {
-                                    "role": "user", 
+                                    "role": "user",
                                     "content": f"State: {state_text}\n\n👉 Suggested Baseline: {suggested_rate:.4f}"
                                 }
                             ],
@@ -145,17 +146,16 @@ async def run_hybrid_inference():
                         )
                         decision = json.loads(completion.choices[0].message.content)
                         multiplier = float(decision.get("rate_multiplier", 1.0))
-                        multiplier = max(0.5, min(2.0, multiplier)) # Safe range clamp
+                        multiplier = max(0.5, min(2.0, multiplier))  # safe clamp
                         final_rate = suggested_rate * multiplier
-                    except Exception as e:
-                        # Fallback to heuristic baseline on LLM failure
-                        pass
+                    except Exception:
+                        pass  # fallback to heuristic baseline
 
                 # Step Environment
                 execute_result = await env_client.execute_trade(participation_rate=final_rate)
-                reward = await env_client.get_reward()
+                reward = await env_client.get_reward()  # RL reward (float, can be negative)
                 rewards_list.append(reward)
-                
+
                 done_bool = "EPISODE COMPLETE" in execute_result
                 log_step(step=step_count, action=f"{final_rate:.4f}", reward=reward, done=done_bool, error=None)
 
@@ -167,15 +167,17 @@ async def run_hybrid_inference():
                 })
 
                 if done_bool:
+                    # Extract grader score from episode-complete result string.
+                    # NOTE: get_reward() returns RL reward (can be negative) — NOT grader score.
+                    # Grader score is in the narrative: "Grader Score:   0.6375 / 1.0000"
                     try:
-                        # Final score extraction (clamped to [0.0001, 0.9999] internally)
                         raw_score = execute_result.split("Grader Score:")[1].split("/")[0].strip().split()[0]
                         final_score = float(raw_score)
-                        # Safety clamp — validator requires strictly (0, 1)
-                        final_score = min(max(final_score, 0.0001), 0.9999)
+                        final_score = min(max(final_score, 0.0001), 0.9999)  # strict (0,1)
                         final_success = final_score >= SUCCESS_SCORE_THRESHOLD
-                    except:
+                    except Exception:
                         final_score = 0.0001  # fallback — never 0.0
+                        final_success = False
                     done = True
             
             log_end(success=final_success, steps=step_count, score=final_score, rewards=rewards_list)
