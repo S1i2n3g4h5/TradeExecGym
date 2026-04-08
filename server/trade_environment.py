@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from openenv.core import Action, Environment, Observation
-from models import TradeAction, TradeObservation, TradeState
+from models import TradeAction, TradeObservation, TradeState, TradeReward
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     Trains agents to minimize Implementation Shortfall (IS) using an
     Almgren-Chriss market-impact model.
     """
-    SUPPORTS_CONCURRENT_SESSIONS = True
+    SUPPORTS_CONCURRENT_SESSIONS = False
 
     def __init__(self) -> None:
         # Episode state (initialised here; properly set in reset())
@@ -112,86 +112,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"Your IS Performance: {current_is:.1f} bps"
         )
 
-    def execute_trade_logic(
-        self,
-        participation_rate: float = 0.05,
-        use_dark_pool: bool = False,
-        dark_pool_fraction: float = 0.0,
-        limit_offset_bps: float = 0.0,
-    ) -> str:
-        """Core execution logic using Almgren-Chriss physics and venue routing."""
-        if self.active_task is None or self._episode_id is None:
-            return "[!] ENVIRONMENT NOT INITIALIZED."
-        if self._episode_done:
-            return "[NO] Episode already complete."
 
-        try:
-            steps_left = max(0, self._max_steps - self._step_count)
-            if steps_left <= 0:
-                self._episode_done = True
-                return "[TIME] Time limit reached."
-
-            participation_rate = max(0.0, min(0.25, float(participation_rate)))
-            self._step_count += 1
-
-            # Determine target shares
-            adv_per_step = ADV_SHARES / 780
-            target_shares = int(participation_rate * adv_per_step * self._volume_ratio())
-            shares_to_fill = min(target_shares, self._shares_remaining)
-
-            # --- Task Hook (Adversary) ---
-            adv_penalty_bps = self.active_task.on_trade_step(
-                step_count=self._step_count,
-                participation_rate=participation_rate,
-                current_price=self._mid_price,
-                shares_executed=self._shares_executed,
-                shares_remaining=self._shares_remaining,
-            )
-
-            # --- Price model step ---
-            market_state = self.price_model.step(participation_rate)
-            if adv_penalty_bps > 0:
-                market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
-            self._mid_price = market_state.price
-            
-            # --- Venue routing ---
-            dark_filled, lit_filled, dark_price, lit_price, toxic_slippage = self.venue_router.route_order(
-                use_dark_pool=use_dark_pool,
-                dark_pool_fraction=dark_pool_fraction,
-                shares_to_fill=shares_to_fill,
-                current_price=self._mid_price,
-                volatility=self.price_model.sigma
-            )
-            
-            execution_slippage_bps = market_state.last_temp_impact_bps + toxic_slippage
-            if execution_slippage_bps != 0:
-                lit_price *= (1.0 + execution_slippage_bps / 10_000.0)
-            
-            # Fills
-            if dark_filled > 0:
-                self._total_cost += dark_filled * dark_price
-                self._shares_executed += dark_filled
-                self._shares_remaining -= dark_filled
-            if lit_filled > 0:
-                self._total_cost += lit_filled * lit_price
-                self._shares_executed += lit_filled
-                self._shares_remaining -= lit_filled
-
-            self._baseline_step += 1
-            if (self._shares_remaining <= 0) or (self._step_count >= self._max_steps):
-                self._episode_done = True
-
-            # Reward calculation
-            self._last_reward = compute_reward(
-                self._mid_price, self._arrival_price, self._shares_executed,
-                self._total_shares, self._total_cost, self._shares_remaining,
-                self._twap_is_at_step(), self._vwap_is_at_step()
-            )
-            
-            return f"Filled {dark_filled + lit_filled} shares. IS now {self._compute_current_is():.2f} bps."
-        except Exception as e:
-            logger.error(f"Error in trade logic: {e}\n{traceback.format_exc()}")
-            return f"Error: {str(e)}"
 
     def grade(self) -> float:
         """Standard OpenEnv grader endpoint."""
@@ -325,7 +246,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
              return self.get_observation()
 
         # 1. Execute the trade logic
-        output_text = self.execute_trade_logic(
+        output_text = self.execute_trade(
             participation_rate=action.participation_rate,
             use_dark_pool=action.use_dark_pool,
             dark_pool_fraction=action.dark_pool_fraction
@@ -341,13 +262,23 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         
         return obs
 
+    def get_reward(self) -> float:
+        """Standard OpenEnv tool returning the most recent per-step reward."""
+        return float(self._last_reward) if self._last_reward is not None else 0.0
+
+    def get_observation(self) -> TradeObservation:
+        """Returns the high-fidelity TradeObservation for the current state."""
+        return self._build_observation(reward=self._last_reward, done=self._episode_done)
+
     def _build_observation(self, reward: Optional[float] = None, done: bool = False) -> TradeObservation:
-        """Build a TradeObservation from current state."""
-        return TradeObservation(
+        """Build a TradeObservation from current state, ensuring metadata is populated."""
+        obs = TradeObservation(
             day=0, # SOR is intraday
             step=self._step_count,
             price_norm=self._mid_price / max(0.001, self._arrival_price),
             shares_remaining=int(self._shares_remaining),
+            progress_pct=self._step_count / max(1, self._max_steps),
+            remaining_pct=self._shares_remaining / max(1, self._total_shares),
             current_is_bps=self._compute_current_is(),
             vol_ratio=self._volume_ratio(),
             text_summary=self._build_market_state_text(),
@@ -355,6 +286,17 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             reward=reward,
             info=self._build_numeric_observation()
         )
+        
+        # OpenEnv Spec Compliance: 
+        # test_reset_returns_observation and test_reset_includes_numeric_observation 
+        # expect metadata to contain task_id and the observation dictionary.
+        obs.metadata = {
+            "task_id": self._task_id,
+            "max_steps": self._max_steps,
+            "total_shares": self._total_shares,
+            "observation": self._build_numeric_observation()
+        }
+        return obs
 
 
     @property
@@ -366,7 +308,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             task_id=self._task_id,
             shares_remaining=self._shares_remaining,
             current_is_bps=self._compute_current_is(),
-            price_norm=self._price_model.current_price / self._arrival_price,
+            price_norm=(self.price_model.state.price / self._arrival_price) if (self.price_model and self.price_model.state) else 1.0,
             done=self._episode_done,
         )
 
@@ -622,13 +564,13 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"  IS < {ac_is:.1f}  -> beat AC Optimal (Hall of Fame)"
         )
 
-    def _execute_trade_logic(
+    def execute_trade(
         self,
         participation_rate: float,
-        use_dark_pool: bool,
-        dark_pool_fraction: float,
-        order_type: str,
-        limit_offset_bps: float,
+        use_dark_pool: bool = False,
+        dark_pool_fraction: float = 0.0,
+        order_type: str = "market",
+        limit_offset_bps: float = 0.0,
     ) -> str:
         """Core execution logic using Almgren-Chriss physics and venue routing."""
         # Guard: must call reset() before execute_trade()

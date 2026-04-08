@@ -10,12 +10,15 @@ class TradeObservation(Observation):
     step: int = Field(0, description="current simulation step")
     price_norm: float = Field(1.0, description="current_price / arrival_price")
     shares_remaining: int = Field(0, description="shares left to execute")
+    progress_pct: float = Field(0.0, description="percentage of episode time elapsed [0, 1]")
+    remaining_pct: float = Field(1.0, description="percentage of shares remaining [0, 1]")
     current_is_bps: float = Field(0.0, description="Implementation Shortfall in basis points")
     vol_ratio: float = Field(1.0, description="Intraday volume multiplier")
     text_summary: str = Field("", description="Human-readable state for LLM reasoning")
     valid_actions: List[str] = Field(default_factory=lambda: ["execute_trade"], description="list of allowed actions")
     done: bool = Field(False, description="Whether the episode is complete")
     info: dict = Field(default_factory=dict, description="Additional debug metadata")
+    metadata: dict = Field(default_factory=dict, description="OpenEnv compliant metadata dictionary")
 
 class TradeAction(Action):
     """Validated action for one environment step."""
@@ -32,6 +35,14 @@ class TradeAction(Action):
         description="Fraction to route via dark pool (0.3 recommended)"
     )
     thought: Optional[str] = Field(None, description="Agent's reasoning for this action")
+
+class TradeReward(BaseModel):
+    """Structured reward with decomposition for interpretable training."""
+    model_config = {"extra": "allow"}
+    value: float = Field(0.0, description="The scalar reward value")
+    dense: float = Field(0.0, description="Dense training signal (e.g. per-step IS)")
+    sparse: float = Field(0.0, description="Sparse signal (e.g. milestone bonus)")
+    terminal: float = Field(0.0, description="Final episode score component")
 
 class TradeState(State):
     """Internal state representation for TradeExecGym."""
