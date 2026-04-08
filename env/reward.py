@@ -79,4 +79,5 @@ def compute_reward(
     # The caller (TradeExecEnvironment._execute_trade_logic) handles milestone
     # detection and adds sparse_bonus separately on top of this return value.
 
-    return float(reward)
+    # Validator-safe clamp: keep reward strictly inside (0, 1).
+    return float(max(0.01, min(0.99, reward)))
