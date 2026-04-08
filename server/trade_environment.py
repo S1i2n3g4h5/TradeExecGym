@@ -204,12 +204,14 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     def get_metadata(self) -> Dict[str, Any]:
         """Returns environment metadata for the dashboard."""
         return {
-            "episode_id": self._episode_id,
-            "task_id": self._task_id,
-            "step": self._step_count,
-            "max_steps": self._max_steps,
-            "done": self._episode_done,
-            "grader_score": self._compute_grader_score()
+            "name": "trade_exec_gym",
+            "description": (
+                "Smart Order Router RL environment for minimizing "
+                "implementation shortfall under microstructure constraints."
+            ),
+            "version": "1.0.0",
+            "author": "singh",
+            "documentation_url": "https://huggingface.co",
         }
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
@@ -313,6 +315,12 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         **kwargs: Any,
     ) -> TradeObservation:
         """Execute one environment step using standard TradeAction."""
+        if self.active_task is None:
+            # OpenEnv HTTP /step requests are stateless by default.
+            # Auto-reset avoids internal crashes when this instance has
+            # not received a prior in-process reset().
+            self.reset(task_id=self._task_id or "task_1", seed=42)
+
         if self._episode_done:
              return self.get_observation()
 
@@ -944,6 +952,9 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         This weighting reflects real-world SOR performance attribution -- IS quality matters
         most, but an unfilled order is an operational failure regardless of slippage.
         """
+        if self.active_task is None:
+            return 0.0001
+
         raw_score = self.active_task.get_grader_score(
             shares_executed=self._shares_executed,
             total_shares=self._total_shares,

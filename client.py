@@ -134,13 +134,14 @@ class SyncTradeEnv:
             import re
             nums = re.findall(r"0\.\d+", action.command)
             if nums:
-                 action.participation_rate = float(nums[0])
-            p_rate = action.participation_rate
+                action.participation_rate = float(nums[0])
+            p_rate = action.participation_rate if action.participation_rate is not None else 0.05
         else:
             p_rate = 0.05
-            
+
+        p_rate = max(0.0, min(0.25, float(p_rate)))
         res = self.client._step_sync({"participation_rate": p_rate})
-        
+
         from models import YourRlObservation
         try:
             obs = YourRlObservation(**res)

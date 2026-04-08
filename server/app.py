@@ -27,9 +27,11 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from fastapi import HTTPException
 from openenv.core import create_app
 from server.trade_environment import TradeExecEnvironment
 from models import TradeAction, TradeObservation
+from task_manifest import count_graded_tasks, get_task_specs
 
 # ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
 # LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
@@ -56,6 +58,29 @@ def ui_redirect():
         "env_api": "http://localhost:7860",
         "docs": "http://localhost:7860/docs"
     }
+
+@app.get("/tasks")
+def list_tasks():
+    """Expose task metadata including grader registration for validators."""
+    tasks = get_task_specs()
+    return {
+        "tasks": tasks,
+        "tasks_with_graders": count_graded_tasks(),
+        "min_required_graders": 3,
+    }
+
+
+@app.get("/grader/{task_id}")
+def grader_info(task_id: str):
+    """Return grader info for a specific task."""
+    for task in get_task_specs():
+        if task.get("id") == task_id:
+            return {
+                "task_id": task_id,
+                "grader": task.get("grader"),
+                "has_grader": bool(task.get("grader")),
+            }
+    raise HTTPException(status_code=404, detail=f"Unknown task_id '{task_id}'")
 
 
 def main():
