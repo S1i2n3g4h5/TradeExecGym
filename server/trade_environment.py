@@ -229,6 +229,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             task_id: One of the task keys defined in ``TASK_CONFIGS``.
         """
         tid = task_id or kwargs.get("task_id", "task_1")
+        original_tid = tid
         
         # Mapping for task_1..task_5 style IDs
         task_mapping = {
@@ -238,12 +239,12 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             "task_4": "task4_adversarial",
             "task_5": "task5_deadline_pressure"
         }
-        tid = task_mapping.get(tid, tid)
+        mapped_tid = task_mapping.get(tid, tid)
         
-        self.active_task = get_task(tid)
+        self.active_task = get_task(mapped_tid)
 
         # Reset episode state
-        self._task_id = self.active_task.task_id
+        self._task_id = original_tid # Keep "task_1" etc. as defined in openenv.yaml
         self._total_shares = self.active_task.total_shares
         self._shares_remaining = self._total_shares
         self._shares_executed = 0

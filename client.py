@@ -34,18 +34,26 @@ class TradeExecClient:
             return flat
         return raw
 
-    async def reset(self, task_id: str = "task_1", seed: Optional[int] = None) -> Dict[str, Any]:
-        """Reset the environment for a new episode."""
+    def _reset_sync(self, task_id: str = "task_1", seed: Optional[int] = None) -> Dict[str, Any]:
+        """Synchronous implementation of reset."""
         payload = {"task_id": task_id, "seed": seed}
         r = self._session.post(f"{self.base_url}/reset", json=payload, timeout=30)
         r.raise_for_status()
         return self._unwrap(r.json())
 
-    async def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute one simulation step."""
+    async def reset(self, task_id: str = "task_1", seed: Optional[int] = None) -> Dict[str, Any]:
+        """Reset the environment for a new episode."""
+        return self._reset_sync(task_id=task_id, seed=seed)
+
+    def _step_sync(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Synchronous implementation of step."""
         r = self._session.post(f"{self.base_url}/step", json={"action": action}, timeout=30)
         r.raise_for_status()
         return self._unwrap(r.json())
+
+    async def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute one simulation step."""
+        return self._step_sync(action=action)
 
     async def execute_trade(
         self,
@@ -63,20 +71,21 @@ class TradeExecClient:
         # Return the output text from info if available, otherwise generic
         return obs.get("info", {}).get("output", "Trade executed.")
 
-    async def get_market_state(self) -> str:
-        """Fetch human-readable market narrative."""
+    def _get_state_sync(self) -> Dict[str, Any]:
+        """Synchronous state fetch."""
         r = self._session.get(f"{self.base_url}/state", timeout=10)
         r.raise_for_status()
-        # In a standard Environment, state() returns the State pydantic model, 
-        # but create_app often includes a natural language summary.
-        data = r.json()
+        return r.json()
+
+    async def get_market_state(self) -> str:
+        """Fetch human-readable market narrative."""
+        data = self._get_state_sync()
         return data.get("text_summary") or data.get("output") or "No state available."
 
     async def get_reward(self) -> float:
         """Retrieve the current grader score / reward."""
-        r = self._session.get(f"{self.base_url}/state", timeout=10)
-        r.raise_for_status()
-        return float(r.json().get("reward", 0.0))
+        data = self._get_state_sync()
+        return float(data.get("reward", 0.0))
 
     async def get_grader_score(self) -> float:
         """Alias for get_reward."""
@@ -106,14 +115,7 @@ class SyncTradeEnv:
         self.client._session.close()
 
     def reset(self, **kwargs):
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        res = loop.run_until_complete(self.client.reset(**kwargs))
+        res = self.client._reset_sync(**kwargs)
         from models import YourRlObservation
         try:
             obs = YourRlObservation(**res)
@@ -126,7 +128,6 @@ class SyncTradeEnv:
         return Result(observation=obs, done=False, reward=0.0)
 
     def step(self, action):
-        import asyncio
         from models import YourRlAction
         if isinstance(action, YourRlAction):
             # Convert command to participation_rate if needed
@@ -137,14 +138,8 @@ class SyncTradeEnv:
             p_rate = action.participation_rate
         else:
             p_rate = 0.05
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             
-        res = loop.run_until_complete(self.client.step({"participation_rate": p_rate}))
+        res = self.client._step_sync({"participation_rate": p_rate})
         
         from models import YourRlObservation
         try:
@@ -152,10 +147,12 @@ class SyncTradeEnv:
         except Exception:
             obs = YourRlObservation()
             
-        obs.task_achieved = obs.reward > 0.8
+        # Ensure reward and done are picked up from the response
+        reward_val = res.get("reward", 0.0)
+        done_val = res.get("done", False)
         
         from collections import namedtuple
         Result = namedtuple("Result", ["observation", "done", "reward"])
-        return Result(observation=obs, done=obs.done, reward=obs.reward)
+        return Result(observation=obs, done=done_val, reward=reward_val)
 
 YourRlEnv = TradeExecClient
