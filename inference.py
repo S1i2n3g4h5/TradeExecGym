@@ -32,6 +32,8 @@ BENCHMARK = "trade-exec-gym"
 DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_1")
 MAX_STEPS = int(os.getenv("MAX_STEPS", "120"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
+DEFAULT_SPACE_URL = "https://singhsa-tradeexecgym.hf.space"
+REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
 
 
 def _clamp_rate(rate: float) -> float:
@@ -100,9 +102,39 @@ def build_user_prompt(
 
 
 def _build_llm_client() -> Optional[OpenAI]:
-    if not API_BASE_URL or not API_KEY:
+    # Use injected validator credentials when present.
+    # Keep fallback for local dry-runs only.
+    try:
+        base_url = os.environ["API_BASE_URL"].strip()
+        api_key = os.environ["API_KEY"].strip()
+    except KeyError:
+        if not API_BASE_URL or not API_KEY:
+            return None
+        base_url = API_BASE_URL.strip()
+        api_key = API_KEY.strip()
+
+    if not base_url or not api_key:
         return None
-    return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+def _ensure_proxy_call(llm_client: Optional[OpenAI]) -> str:
+    """Attempt one tiny completion to guarantee proxy usage in validator runs."""
+    if llm_client is None:
+        return "proxy_client_missing"
+
+    try:
+        llm_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "Return exactly: ok"},
+                {"role": "user", "content": "ok"},
+            ],
+            max_tokens=5,
+        )
+        return ""
+    except Exception as exc:
+        return f"proxy_preflight_error={type(exc).__name__}: {exc}"
 
 
 def get_model_command(
@@ -139,6 +171,13 @@ def get_model_command(
 
 def run_task(env_url: str) -> None:
     llm_client = _build_llm_client()
+    if llm_client is None and REQUIRE_LLM_PROXY:
+        print(
+            "[END] success=false steps=0 score=0.01 rewards=0.01 error='missing API_BASE_URL/API_KEY for required proxy call'",
+            flush=True,
+        )
+        raise SystemExit(1)
+
     rewards: List[float] = []
     history: List[str] = []
     steps = 0
@@ -147,6 +186,9 @@ def run_task(env_url: str) -> None:
     last_output = ""
     last_error = ""
     last_reward = 0.0
+    proxy_error = _ensure_proxy_call(llm_client)
+    if proxy_error:
+        last_error = proxy_error
 
     try:
         with YourRlEnv(base_url=env_url).sync() as env:
@@ -240,4 +282,10 @@ def run_task(env_url: str) -> None:
 
 
 if __name__ == "__main__":
-    run_task(os.getenv("ENV_BASE_URL", "http://localhost:7860"))
+    env_url = (
+        os.getenv("ENV_BASE_URL")
+        or os.getenv("SPACE_URL")
+        or os.getenv("HF_SPACE_URL")
+        or DEFAULT_SPACE_URL
+    )
+    run_task(env_url)

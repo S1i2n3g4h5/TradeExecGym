@@ -31,11 +31,8 @@ def test_compute_reward_optimal():
         slippage_bps=0.0,
         participation_rate=0.05,  # non-zero -> no zero-rate penalty
     )
-    # Dense: (20-10)*0.1 = 1.0
-    # Delayed: +1.0 (>95% completion)
-    # Quality: +0.5 (10.0 < 20.0 * 0.58 = 11.6 -> True)
-    # Total: 2.5
-    assert reward == 2.5
+    # Raw total would be 2.5, but reward is now clamped to 0.99.
+    assert reward == 0.99
 
 
 def test_compute_reward_zero_rate_penalty():
@@ -78,8 +75,8 @@ def test_compute_reward_negative_dense():
         slippage_bps=5.0,
         participation_rate=0.05,
     )
-    # Dense: (20 - 30) * 0.1 = -1.0
-    assert reward == pytest.approx(-1.0, abs=1e-9)
+    # Raw dense would be -1.0, but reward is now clamped to 0.01.
+    assert reward == pytest.approx(0.01, abs=1e-9)
 
 
 def test_compute_reward_incomplete_terminal_penalty():
@@ -94,6 +91,5 @@ def test_compute_reward_incomplete_terminal_penalty():
         slippage_bps=0.0,
         participation_rate=0.05,
     )
-    # Dense: (20-15) * 0.1 = 0.5
-    # Terminal: -0.5 (< 95% fill)
-    assert reward == pytest.approx(0.0, abs=1e-9)
+    # Raw total would be 0.0, but reward is now clamped to 0.01.
+    assert reward == pytest.approx(0.01, abs=1e-9)
