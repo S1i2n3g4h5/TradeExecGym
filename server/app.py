@@ -33,10 +33,21 @@ from server.trade_environment import TradeExecEnvironment
 from models import TradeAction, TradeObservation
 from task_manifest import count_graded_tasks, get_task_specs
 
+# ── Singleton Environment Management ─────────────────────────────────────────
+# Preserve state across stateless HTTP calls (/reset -> /step)
+_GLOBAL_ENV = None
+
+def make_env() -> TradeExecEnvironment:
+    """Factory function to manage the singleton environment instance."""
+    global _GLOBAL_ENV
+    if _GLOBAL_ENV is None:
+        _GLOBAL_ENV = TradeExecEnvironment()
+    return _GLOBAL_ENV
+
 # ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
 # LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
 app = create_app(
-    env=TradeExecEnvironment,
+    env=make_env,
     action_cls=TradeAction,
     observation_cls=TradeObservation,
     env_name="trade_exec_gym"

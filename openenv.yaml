@@ -18,27 +18,115 @@ server:
   path: server/app.py
   object: app
 
+entry_point: "server.app:app"
+
 action_class: TradeAction
 observation_class: TradeObservation
+
+reward_range: [-2.0, 2.0]
+
+observation_space:
+  price_norm:
+    type: float
+    low: 0.5
+    high: 2.0
+    description: "current_price / arrival_price"
+  shares_remaining:
+    type: int
+    low: 0
+    high: 1000000
+    description: "shares left to execute"
+  current_is_bps:
+    type: float
+    low: 0.0
+    high: 100.0
+    description: "implementation shortfall in basis points"
+  vol_ratio:
+    type: float
+    low: 0.0
+    high: 5.0
+    description: "intraday volume multiplier"
+  step:
+    type: int
+    low: 0
+    high: 300
+    description: "current episode step"
+
+action_space:
+  participation_rate:
+    type: float
+    low: 0.0
+    high: 0.25
+    default: 0.05
+    description: "fraction of ADV to trade per step"
+  use_dark_pool:
+    type: bool
+    default: false
+    description: "enable dark pool routing"
+  dark_pool_fraction:
+    type: float
+    low: 0.0
+    high: 1.0
+    default: 0.0
+    description: "fraction to route via dark pool"
 
 tasks:
   - id: task_1
     name: "TWAP Beater"
     difficulty: easy
+    max_episode_steps: 30
     description: >
       Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
       Exploit intraday volume patterns.
+    generator: "task_generators:generate_task_1"
+    grader: "graders:grade_task_1"
+    has_grader: true
+    scoring_criteria: "IS quality vs AC Optimal (50%), completion (30%), baseline beating (20%)"
 
   - id: task_2
     name: "VWAP Optimizer"
     difficulty: medium
+    max_episode_steps: 60
     description: >
       Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
       Beat VWAP benchmark.
+    generator: "task_generators:generate_task_2"
+    grader: "graders:grade_task_2"
+    has_grader: true
+    scoring_criteria: "IS quality vs AC Optimal (50%), completion (30%), baseline beating (20%)"
 
   - id: task_3
     name: "Volatile Execution"
     difficulty: hard
+    max_episode_steps: 90
     description: >
       Buy 400,000 shares under 3x normal volatility (sigma=0.06).
       Use dark pool routing to bypass lit-venue impact.
+    generator: "task_generators:generate_task_3"
+    grader: "graders:grade_task_3"
+    has_grader: true
+    scoring_criteria: "IS quality vs AC Optimal (50%), completion (30%), baseline beating (20%)"
+
+  - id: task_4
+    name: "HFT Adversary"
+    difficulty: expert
+    max_episode_steps: 120
+    description: >
+      Sell 600,000 shares while an HFT adversary reacts to predictable
+      participation patterns. Randomize execution to avoid detection.
+    generator: "task_generators:generate_task_4"
+    grader: "graders:grade_task_4"
+    has_grader: true
+    scoring_criteria: "IS quality vs AC Optimal (50%), completion (30%), baseline beating (20%)"
+
+  - id: task_5
+    name: "Deadline Pressure"
+    difficulty: extreme
+    max_episode_steps: 80
+    description: >
+      Buy 1,000,000 shares in exactly 80 steps with a hard completion
+      gate: score is 0.0 unless >=99.9% filled.
+    generator: "task_generators:generate_task_5"
+    grader: "graders:grade_task_5"
+    has_grader: true
+    scoring_criteria: "Binary completion gate (99.9% fill required) + IS quality bonus"

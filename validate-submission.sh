@@ -16,7 +16,7 @@ echo "============================================================"
 
 # 1. Start server in background
 echo "📡 Starting server in background..."
-python -m uvicorn server.app:app --host 0.0.0.0 --port 7865 > /tmp/tradegym_server.log 2>&1 &
+python3 -m uvicorn server.app:app --host 0.0.0.0 --port 7865 > /tmp/tradegym_server.log 2>&1 &
 SERVER_PID=$!
 echo "   Server started with PID: $SERVER_PID"
 
@@ -36,7 +36,7 @@ trap cleanup EXIT
 
 # 2. Run full robustness validation (all 5 layers + performance + determinism)
 echo "🔍 Running full robustness validation (Layers 0-4 + Performance)..."
-if python tests/validate_robustness.py --full --url "$BASE_URL"; then
+if python3 tests/validate_robustness.py --full --url "$BASE_URL"; then
     echo "✅ Full validation passed!"
 else
     echo "❌ Validation failed - check ROBUSTNESS_REPORT.json for details"
@@ -45,7 +45,7 @@ fi
 
 # 3. Run edge case test suite
 echo "🔍 Running edge case test suite..."
-if python -m pytest tests/test_edge_cases.py -v; then
+if python3 -m pytest tests/test_edge_cases.py -v; then
     echo "✅ Edge case tests passed!"
 else
     echo "❌ Edge case tests failed"
