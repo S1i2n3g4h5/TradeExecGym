@@ -9,7 +9,7 @@ class TradeObservation(Observation):
     day: int = Field(0, description="current simulation day")
     step: int = Field(0, description="current simulation step")
     price_norm: float = Field(1.0, description="current_price / arrival_price")
-    shares_remaining: int = Field(..., description="shares left to execute")
+    shares_remaining: int = Field(0, description="shares left to execute")
     current_is_bps: float = Field(0.0, description="Implementation Shortfall in basis points")
     vol_ratio: float = Field(1.0, description="Intraday volume multiplier")
     text_summary: str = Field("", description="Human-readable state for LLM reasoning")
@@ -35,37 +35,38 @@ class TradeAction(Action):
 
 class TradeState(State):
     """Internal state representation for TradeExecGym."""
-    task_id: str = Field(..., description="The ID of the active task (e.g., task_1)")
-    shares_remaining: int = Field(..., description="Shares left to execute")
-    current_is_bps: float = Field(..., description="Current implementation shortfall")
-    price_norm: float = Field(..., description="Normalized current price")
-    done: bool = Field(..., description="Episode completion status")
+    model_config = {"extra": "allow"}
+    task_id: str = Field("task_1", description="The ID of the active task (e.g., task_1)")
+    shares_remaining: int = Field(0, description="Shares left to execute")
+    current_is_bps: float = Field(0.0, description="Current implementation shortfall")
+    price_norm: float = Field(1.0, description="Normalized current price")
+    done: bool = Field(False, description="Episode completion status")
 
 # --- Submission Compatibility Tier ---
 class TaskInfo(BaseModel):
     task_id: str = "task_4"
     description: str = "Execute the trade mandate efficiently."
 
-class YourRlObservation(Observation):
-    """Alias for TradeObservation for validator compatibility."""
+class YourRlObservation(BaseModel):
+    """Alias for TradeObservation for validator compatibility. 
+    Inherits from BaseModel and uses Optional types for maximum stability.
+    """
     model_config = {"extra": "allow"}
-    command_output: str = Field(default="", alias="text_summary")
-    error: str = Field(default="")
-    task: TaskInfo = Field(default_factory=TaskInfo)
-    reward: float = Field(default=0.0)
-    step_count: int = Field(default=0, alias="step")
+    command_output: Optional[str] = Field(default="", alias="text_summary")
+    error: Optional[str] = Field(default="")
+    task: Optional[TaskInfo] = Field(default_factory=TaskInfo)
+    reward: Optional[float] = Field(default=0.0)
+    step_count: Optional[int] = Field(default=0, alias="step")
     task_achieved: bool = Field(default=False)
-    info: dict = Field(default_factory=dict)
+    info: Dict[str, Any] = Field(default_factory=dict)
     
     @property
     def metadata(self) -> dict:
         """Alias for info used in some monitoring scripts."""
         return self.info
 
-class YourRlAction(Action):
+class YourRlAction(BaseModel):
     """Alias for TradeAction for validator compatibility."""
     model_config = {"extra": "allow"}
-    command: str = Field(default="")
-    participation_rate: float = 0.05
-
-from pydantic import BaseModel
+    command: Optional[str] = Field(default="")
+    participation_rate: Optional[float] = 0.05

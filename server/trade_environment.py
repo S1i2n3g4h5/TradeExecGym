@@ -433,8 +433,9 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         """
         return {
             "price_norm": self._mid_price / max(0.001, self._arrival_price),
-            "progress_pct": self._step_count / max(1, self._max_steps),
+            "progress_pct": self._shares_executed / max(1, self._total_shares),
             "remaining_pct": self._shares_remaining / max(1, self._total_shares),
+            "shares_remaining": self._shares_remaining,
             "vol_ratio": self._volume_ratio(),
             "current_is_bps": self._compute_current_is(),
             "done": self._episode_done,
