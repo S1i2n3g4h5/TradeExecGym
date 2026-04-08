@@ -1,0 +1,49 @@
+{
+  "additionalProperties": true,
+  "description": "Validated action for one environment step.",
+  "properties": {
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Additional metadata for the action",
+      "title": "Metadata",
+      "type": "object"
+    },
+    "participation_rate": {
+      "default": 0.05,
+      "description": "Fraction of ADV to trade (0.0=nothing, 0.25=maximum)",
+      "maximum": 0.25,
+      "minimum": 0.0,
+      "title": "Participation Rate",
+      "type": "number"
+    },
+    "use_dark_pool": {
+      "default": false,
+      "description": "Enable dark pool routing",
+      "title": "Use Dark Pool",
+      "type": "boolean"
+    },
+    "dark_pool_fraction": {
+      "default": 0.0,
+      "description": "Fraction to route via dark pool (0.3 recommended)",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Dark Pool Fraction",
+      "type": "number"
+    },
+    "thought": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Agent's reasoning for this action",
+      "title": "Thought"
+    }
+  },
+  "title": "TradeAction",
+  "type": "object"
+}

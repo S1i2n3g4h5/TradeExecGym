@@ -1,0 +1,35 @@
+{
+  "reset": {
+    "observation": {
+      "day": 0,
+      "step": 0,
+      "price_norm": 1.0,
+      "shares_remaining": 100000,
+      "current_is_bps": 0.0,
+      "vol_ratio": 1.6,
+      "text_summary": "[!] REMINDER: participation_rate=0.0 = 0 shares traded this step.\n   Unexecuted shares at deadline = severe score penalty.\n\nMARKET STATE -- Step 0/30\n----------------------------------------------------\nNARRATIVE: [Task 1 | 0% done | 100,000 shares left] OPEN SESSION: Volume is surging (1.6x ADV) -- prime liquidity window. TWAP equal-slice rate = 0.0333. Beat it: use rate 0.10-0.15 now. [WAIT] No fills yet -- IS will appear after the first trade.\n\nINVENTORY\n  Executed:           0 / 100,000 (0.0%)\n  Remaining:    100,000 shares\n  Time left: 30 steps\n\nPRICES\n  Mid Price:     $150.0000\n  Arrival Price: $150.0000  (IS benchmark, fixed at reset)\n  Spread:        5.0 bps\n\nMARKET CONDITIONS\n  Volume Ratio: 1.60x  (1.0 = normal daily avg)\n  Session:      open\n  Dark Pool:    [OK] Available -- use dark_pool_fraction=0.3-0.5 to cut spread cost\n\nPERFORMANCE  (IS = basis points, lower = better)\n  Your IS:   0.00 bps   [NO] Behind TWAP by 0.0 bps\n  TWAP IS:   0.00 bps\n  VWAP IS:   0.00 bps\n  Est. Score:    0.5000 / 1.0000  (target >= 0.80 for professional tier)\n\nACTION PREVIEW  (if you use suggested rate)\n  Will fill:  ~5,128 shares (5.13% of total) this step\n  Remaining after: ~94,872 shares\n\n\n>> SUGGESTED ACTION: participation_rate=0.250\n   (Almgren-Chriss optimal for current inventory/time remaining)\n   rate_multiplier > 1.0 = trade faster | < 1.0 = slower | 1.0 = approve",
+      "valid_actions": [
+        "execute_trade"
+      ],
+      "info": {
+        "price_norm": 1.0,
+        "progress_pct": 0.0,
+        "remaining_pct": 1.0,
+        "vol_ratio": 1.6,
+        "current_is_bps": 0.0,
+        "done": false,
+        "step": 0,
+        "info": {
+          "task_id": "task1_twap_beater",
+          "shares_executed": 0,
+          "total_shares": 100000,
+          "mid_price": 150.0
+        }
+      }
+    },
+    "reward": null,
+    "done": false
+  },
+  "step_status": 500,
+  "step_response": "Internal Server Error"
+}

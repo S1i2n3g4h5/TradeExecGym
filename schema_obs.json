@@ -1,0 +1,97 @@
+{
+  "additionalProperties": false,
+  "description": "Structured numeric and text observation for the trading agent.",
+  "properties": {
+    "done": {
+      "default": false,
+      "description": "Whether the episode is complete",
+      "title": "Done",
+      "type": "boolean"
+    },
+    "reward": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Reward signal from the last action",
+      "title": "Reward"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Additional metadata for the observation",
+      "title": "Metadata",
+      "type": "object"
+    },
+    "day": {
+      "default": 0,
+      "description": "current simulation day",
+      "title": "Day",
+      "type": "integer"
+    },
+    "step": {
+      "default": 0,
+      "description": "current simulation step",
+      "title": "Step",
+      "type": "integer"
+    },
+    "price_norm": {
+      "default": 1.0,
+      "description": "current_price / arrival_price",
+      "title": "Price Norm",
+      "type": "number"
+    },
+    "shares_remaining": {
+      "description": "shares left to execute",
+      "title": "Shares Remaining",
+      "type": "integer"
+    },
+    "current_is_bps": {
+      "default": 0.0,
+      "description": "Implementation Shortfall in basis points",
+      "title": "Current Is Bps",
+      "type": "number"
+    },
+    "vol_ratio": {
+      "default": 1.0,
+      "description": "Intraday volume multiplier",
+      "title": "Vol Ratio",
+      "type": "number"
+    },
+    "text_summary": {
+      "default": "",
+      "description": "Human-readable state for LLM reasoning",
+      "title": "Text Summary",
+      "type": "string"
+    },
+    "valid_actions": {
+      "description": "list of allowed actions",
+      "items": {
+        "type": "string"
+      },
+      "title": "Valid Actions",
+      "type": "array"
+    },
+    "info": {
+      "additionalProperties": true,
+      "description": "Additional debug metadata",
+      "title": "Info",
+      "type": "object"
+    }
+  },
+  "required": [
+    "shares_remaining"
+  ],
+  "title": "TradeObservation",
+  "type": "object"
+}

@@ -15,15 +15,14 @@ Phase 2 adds an Almgren-Chriss price model, dark-pool routing, and a per-step 
 import logging
 import statistics
 import traceback
-from typing import Any, Optional
-from uuid import uuid4
+import uuid
+from typing import Any, Dict, List, Optional
 
 import numpy as np
-from pydantic import BaseModel, Field
+from openenv.core import Action, Environment, Observation
+from models import TradeAction, TradeObservation, TradeState
 
-from fastmcp import FastMCP
-from openenv.core.env_server.mcp_environment import MCPEnvironment
-from openenv.core.env_server.types import Action, Observation, State
+logger = logging.getLogger(__name__)
 
 # Phase 2 components
 try:
@@ -44,37 +43,7 @@ logger = logging.getLogger(__name__)
 
 # ── OpenEnv Spec: Typed models for Observation, Action, Reward ───────────────
 
-class TradeObservation(Observation):
-    """Structured numeric observation returned at each environment step."""
-    price_norm: float = Field(description="current_price / arrival_price (1.0 = no drift)")
-    progress_pct: float = Field(ge=0.0, le=1.0, description="step_count / max_steps")
-    remaining_pct: float = Field(ge=0.0, le=1.0, description="shares_remaining / total_shares")
-    vol_ratio: float = Field(ge=0.0, description="Intraday volume multiplier")
-    current_is_bps: float = Field(ge=0.0, description="Implementation Shortfall in bps")
-    done: bool = Field(description="Whether the episode is complete")
-    step: int = Field(ge=0, description="Current step number")
-    info: dict = Field(default_factory=dict, description="Additional metadata")
 
-
-class TradeAction(Action):
-    """Validated action for one environment step."""
-    participation_rate: float = Field(
-        default=0.05, ge=0.0, le=0.25,
-        description="Fraction of ADV to trade (0.0=nothing, 0.25=maximum)"
-    )
-    use_dark_pool: bool = Field(default=False, description="Enable dark pool routing")
-    dark_pool_fraction: float = Field(
-        default=0.0, ge=0.0, le=1.0,
-        description="Fraction to route via dark pool (0.3 recommended)"
-    )
-
-
-class TradeReward(BaseModel):
-    """Decomposed reward for transparency and debugging."""
-    value: float = Field(description="Total step reward")
-    dense: float = Field(description="IS improvement component (vs TWAP baseline)")
-    sparse: float = Field(description="Milestone bonus component")
-    terminal: float = Field(description="End-of-episode bonus component")
 
 
 from tasks.factory import get_task
@@ -84,8 +53,8 @@ ADV_SHARES = 10_000_000
 ADV_PER_STEP = ADV_SHARES / 780  # 780 30-sec intervals in a 6.5h session
 
 
-class TradeExecEnvironment(MCPEnvironment):
-    """Smart Order Router RL Environment (MCPEnvironment).
+class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState]):
+    """Smart Order Router RL Environment.
 
     Trains agents to minimize Implementation Shortfall (IS) using an
     Almgren-Chriss market-impact model.
@@ -94,7 +63,7 @@ class TradeExecEnvironment(MCPEnvironment):
 
     def __init__(self) -> None:
         # Episode state (initialised here; properly set in reset())
-        self._episode_id: str = str(uuid4())
+        self._episode_id: str = str(uuid.uuid4())
         self._task_id: str = "task_1"
         self._step_count: int = 0
         self._total_shares: int = 100_000
@@ -122,61 +91,126 @@ class TradeExecEnvironment(MCPEnvironment):
         self._last_suggested_rate: float = 0.05
 
         # Build FastMCP server with 4 tools (refactor: class methods)
-        mcp = FastMCP("trade_exec_gym")
-        mcp.tool()(self.get_market_state)
-        mcp.tool()(self.get_baseline_comparison)
-        mcp.tool()(self.execute_trade)
-        mcp.tool()(self.get_reward)
-        mcp.tool()(self.grade)
-
-        # Initialise the MCP base class after tools are defined
-        super().__init__(mcp)
+        # Super init
+        super().__init__()
         logger.info("TradeExecEnvironment initialised with 4 MCP tools")
 
     # ── MCP Tool Implementations ───────────────────────────────────────────
 
     def get_market_state(self) -> str:
-        """Return a snapshot of the current market state."""
-        if self.active_task is None or self._episode_id is None:
-            return (
-                "[!] ENVIRONMENT NOT INITIALIZED -- "
-                "Call reset(task_id=...) before get_market_state()."
-            )
+        """Alias for _build_market_state_text() for backward compatibility."""
         return self._build_market_state_text()
 
     def get_baseline_comparison(self) -> str:
-        """Return a comparison against TWAP, VWAP and AC-optimal baselines."""
-        return self._build_baseline_text()
-
-    def execute_trade(
-        self,
-        participation_rate: float,
-        use_dark_pool: bool = False,
-        dark_pool_fraction: float = 0.0,
-        order_type: str = "MARKET",
-        limit_offset_bps: float = 0.0,
-    ) -> str:
-        """Execute a trade for one time step."""
-        return self._execute_trade_logic(
-            participation_rate=float(participation_rate),
-            use_dark_pool=bool(use_dark_pool),
-            dark_pool_fraction=float(dark_pool_fraction),
-            order_type=str(order_type),
-            limit_offset_bps=float(limit_offset_bps),
+        """Returns baseline comparison text."""
+        twap_is = self._twap_is_at_step()
+        vwap_is = self._vwap_is_at_step()
+        current_is = self._compute_current_is()
+        return (
+            f"TWAP Benchmark: {twap_is:.1f} bps\n"
+            f"VWAP Benchmark: {vwap_is:.1f} bps\n"
+            f"Your IS Performance: {current_is:.1f} bps"
         )
 
-    def get_reward(self) -> float:
-        """Return the current grader score in [0.0, 1.0].
+    def execute_trade_logic(
+        self,
+        participation_rate: float = 0.05,
+        use_dark_pool: bool = False,
+        dark_pool_fraction: float = 0.0,
+        limit_offset_bps: float = 0.0,
+    ) -> str:
+        """Core execution logic using Almgren-Chriss physics and venue routing."""
+        if self.active_task is None or self._episode_id is None:
+            return "[!] ENVIRONMENT NOT INITIALIZED."
+        if self._episode_done:
+            return "[NO] Episode already complete."
 
-        Per the OpenEnv spec and Meta hackathon validator, the reward exposed
-        to inference scripts must be a normalised grader score in [0.0, 1.0].
-        The raw RL reward (which can be negative) is internal only.
-        """
-        return self._compute_grader_score()
+        try:
+            steps_left = max(0, self._max_steps - self._step_count)
+            if steps_left <= 0:
+                self._episode_done = True
+                return "[TIME] Time limit reached."
+
+            participation_rate = max(0.0, min(0.25, float(participation_rate)))
+            self._step_count += 1
+
+            # Determine target shares
+            adv_per_step = ADV_SHARES / 780
+            target_shares = int(participation_rate * adv_per_step * self._volume_ratio())
+            shares_to_fill = min(target_shares, self._shares_remaining)
+
+            # --- Task Hook (Adversary) ---
+            adv_penalty_bps = self.active_task.on_trade_step(
+                step_count=self._step_count,
+                participation_rate=participation_rate,
+                current_price=self._mid_price,
+                shares_executed=self._shares_executed,
+                shares_remaining=self._shares_remaining,
+            )
+
+            # --- Price model step ---
+            market_state = self.price_model.step(participation_rate)
+            if adv_penalty_bps > 0:
+                market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
+            self._mid_price = market_state.price
+            
+            # --- Venue routing ---
+            dark_filled, lit_filled, dark_price, lit_price, toxic_slippage = self.venue_router.route_order(
+                use_dark_pool=use_dark_pool,
+                dark_pool_fraction=dark_pool_fraction,
+                shares_to_fill=shares_to_fill,
+                current_price=self._mid_price,
+                volatility=self.price_model.sigma
+            )
+            
+            execution_slippage_bps = market_state.last_temp_impact_bps + toxic_slippage
+            if execution_slippage_bps != 0:
+                lit_price *= (1.0 + execution_slippage_bps / 10_000.0)
+            
+            # Fills
+            if dark_filled > 0:
+                self._total_cost += dark_filled * dark_price
+                self._shares_executed += dark_filled
+                self._shares_remaining -= dark_filled
+            if lit_filled > 0:
+                self._total_cost += lit_filled * lit_price
+                self._shares_executed += lit_filled
+                self._shares_remaining -= lit_filled
+
+            self._baseline_step += 1
+            if (self._shares_remaining <= 0) or (self._step_count >= self._max_steps):
+                self._episode_done = True
+
+            # Reward calculation
+            self._last_reward = compute_reward(
+                self._mid_price, self._arrival_price, self._shares_executed,
+                self._total_shares, self._total_cost, self._shares_remaining,
+                self._twap_is_at_step(), self._vwap_is_at_step()
+            )
+            
+            return f"Filled {dark_filled + lit_filled} shares. IS now {self._compute_current_is():.2f} bps."
+        except Exception as e:
+            logger.error(f"Error in trade logic: {e}\n{traceback.format_exc()}")
+            return f"Error: {str(e)}"
 
     def grade(self) -> float:
-        """Alias for get_reward() to satisfy some OpenEnv validator conventions."""
-        return self.get_reward()
+        """Standard OpenEnv grader endpoint."""
+        return self._compute_grader_score()
+
+    def get_observation(self) -> TradeObservation:
+        """Returns the current observation WITHOUT taking a step."""
+        return self._build_observation(reward=None, done=self._episode_done)
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Returns environment metadata for the dashboard."""
+        return {
+            "episode_id": self._episode_id,
+            "task_id": self._task_id,
+            "step": self._step_count,
+            "max_steps": self._max_steps,
+            "done": self._episode_done,
+            "grader_score": self._compute_grader_score()
+        }
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
 
@@ -186,7 +220,7 @@ class TradeExecEnvironment(MCPEnvironment):
         episode_id: Optional[str] = None,
         task_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> Observation:
+    ) -> TradeObservation:
         """Reset for a new episode.
 
         Args:
@@ -269,77 +303,61 @@ class TradeExecEnvironment(MCPEnvironment):
             self._max_steps,
         )
 
-        return Observation(
-            done=False,
-            reward=None,
-            metadata={
-                "output": self._ascii_safe(output),
-                "episode_id": self._episode_id,
-                "task_id": self._task_id,
-                "total_shares": self._total_shares,
-                "max_steps": self._max_steps,
-                "arrival_price": self._arrival_price,
-                "suggested_participation_rate": self._last_suggested_rate,
-                "observation": self._build_numeric_observation(),
-            },
-        )
+        return self.get_observation()
 
     def step(
         self,
-        action: Action,
+        action: TradeAction,
         timeout_s: Optional[float] = None,
         **kwargs: Any,
-    ) -> Observation:
-        """Override step() to inject grader score as reward and episode done flag.
+    ) -> TradeObservation:
+        """Execute one environment step using standard TradeAction."""
+        if self._episode_done:
+             return self.get_observation()
 
-        The OpenEnv Phase 2 validator checks that the reward field on each
-        step response is a float in [0.0, 1.0] (the grader score) and that
-        done=True when the episode ends.  The base MCPEnvironment always
-        returns reward=None on CallToolObservation — we patch that here.
-        """
-        obs = super().step(action, timeout_s=timeout_s, **kwargs)
-
-        # Inject grader score (0.0–1.0) and done flag into every response
-        # so the Meta dashboard Phase 2 validator sees a valid reward signal.
-        try:
-            grader_score = self._compute_grader_score()
-            grader_score = max(0.01, min(0.99, grader_score))
-            obs.reward = grader_score
-            obs.done = self._episode_done
-        except Exception:
-            pass  # Never crash the step — leave reward as-is on error
-
+        # 1. Execute the trade logic
+        output_text = self.execute_trade_logic(
+            participation_rate=action.participation_rate,
+            use_dark_pool=action.use_dark_pool,
+            dark_pool_fraction=action.dark_pool_fraction
+        )
+        
+        # 2. Compute rewards and done status
+        reward = self._compute_grader_score()
+        reward = max(0.01, min(0.99, reward))
+        
+        # 3. Build observation
+        obs = self._build_observation(reward=reward, done=self._episode_done)
+        obs.info["output"] = self._ascii_safe(output_text)
+        
         return obs
 
-    def _step_impl(
-        self,
-        action: Action,
-        timeout_s: Optional[float] = None,
-        **kwargs: Any,
-    ) -> Observation:
-        """Fallback for non-MCP actions (environment only supports MCP tools)."""
-        return Observation(
-            done=self._episode_done,
-            reward=None,
-            metadata={
-                "output": (
-                    "TradeExecGym only supports MCP tool calls.\n"
-                    "Use ListToolsAction() to discover tools, then:\n"
-                    "  CallToolAction(tool_name='execute_trade', arguments={'participation_rate': 0.05})"
-                ),
-                "error": f"Unsupported action: {type(action).__name__}",
-            },
+    def _build_observation(self, reward: Optional[float] = None, done: bool = False) -> TradeObservation:
+        """Build a TradeObservation from current state."""
+        return TradeObservation(
+            day=0, # SOR is intraday
+            step=self._step_count,
+            price_norm=self._mid_price / max(0.001, self._arrival_price),
+            shares_remaining=int(self._shares_remaining),
+            current_is_bps=self._compute_current_is(),
+            vol_ratio=self._volume_ratio(),
+            text_summary=self._build_market_state_text(),
+            done=done,
+            reward=reward,
+            info=self._build_numeric_observation()
         )
 
+
     @property
-    def state(self) -> State:
-        """Current episode state (used by reward calculation and openenv validate)."""
-        return State(
+    def state(self) -> TradeState:
+        """Returns the full internal state object."""
+        return TradeState(
             episode_id=self._episode_id,
             step_count=self._step_count,
             task_id=self._task_id,
             shares_remaining=self._shares_remaining,
             current_is_bps=self._compute_current_is(),
+            price_norm=self._price_model.current_price / self._arrival_price,
             done=self._episode_done,
         )
 

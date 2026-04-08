@@ -1,0 +1,20 @@
+{
+  "reset": {
+    "observation": {},
+    "reward": null,
+    "done": false
+  },
+  "step_error": {
+    "detail": [
+      {
+        "type": "missing",
+        "loc": [
+          "tool_name"
+        ],
+        "msg": "Field required",
+        "input": {},
+        "url": "https://errors.pydantic.dev/2.12/v/missing"
+      }
+    ]
+  }
+}

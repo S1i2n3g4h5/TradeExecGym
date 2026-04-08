@@ -28,7 +28,8 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from openenv.core import create_app
-from server.trade_environment import TradeExecEnvironment, TradeAction, TradeObservation
+from server.trade_environment import TradeExecEnvironment
+from models import TradeAction, TradeObservation
 
 # ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
 # LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
