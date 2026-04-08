@@ -27,22 +27,16 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from openenv.core.env_server.http_server import create_app
-from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
-
-try:
-    from .trade_environment import TradeExecEnvironment
-except ImportError:
-    from server.trade_environment import TradeExecEnvironment
+from openenv.core import create_app
+from server.trade_environment import TradeExecEnvironment, TradeAction, TradeObservation
 
 # ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
 # LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
 app = create_app(
-    TradeExecEnvironment,
-    CallToolAction,
-    CallToolObservation,
-    env_name="trade_exec_gym",
-    max_concurrent_envs=5
+    env=TradeExecEnvironment,
+    action_cls=TradeAction,
+    observation_cls=TradeObservation,
+    env_name="trade_exec_gym"
 )
 
 

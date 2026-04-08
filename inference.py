@@ -92,15 +92,13 @@ SUCCESS_SCORE_THRESHOLD = 0.8
 # EVALUATOR REQUIREMENT: Single-episode demonstration, no multi-task loop.
 # Task 4 (Adversarial HFT) chosen: richest state narrative, reactive LLM reasoning,
 # adversary metrics show pattern detection -- most impressive for evaluators.
-DEFAULT_TASK = "task4_adversarial"
-
-# Per-task step limits (HTTP metadata stripped by OpenEnv HTTP layer)
+# Per-task step limits
 TASK_MAX_STEPS = {
-    "task1_twap_beater": 30,
-    "task2_vwap_optimizer": 60,
-    "task3_volatile_execution": 90,
-    "task4_adversarial": 120,
-    "task5_deadline_pressure": 80,
+    "task_1": 30,
+    "task_2": 60,
+    "task_3": 80,
+    "task_4": 120,
+    "task_5": 80,
 }
 
 # ==============================================================================
@@ -171,191 +169,106 @@ def extract_score(text: str) -> Optional[float]:
 # ==============================================================================
 # INFERENCE LOGIC (SINGLE EPISODE DEMONSTRATION)
 # ==============================================================================
-async def run_hybrid_inference():
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-
-    # Initialize OpenAI client as requested by Meta specification
-    client_llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
+# ==============================================================================
+# INFERENCE LOGIC (MULTI-TASK DEMONSTRATION)
+# ==============================================================================
+async def run_hybrid_inference_for_task(env_client, client_llm, task_id: str):
     llm_active = client_llm is not None
     _provider = "huggingface" if llm_active else "none"
-
-    if llm_active:
-        print(f"[INFO] LLM provider={_provider} model={MODEL_NAME} json_mode={SUPPORTS_JSON_MODE}", flush=True)
-    else:
-        print(f"[INFO] No HF_TOKEN/API_KEY found -- running heuristic-only mode", flush=True)
-
     heuristic = AlmgrenChrissHeuristic()
-    full_trajectory = []
 
-    async with TradeExecClient(base_url=ENV_BASE_URL) as env_client:
-        # 1. Reset (single episode, locked seed for reproducibility)
-        # [START] uses MODEL_NAME directly per reference script
-        log_start(task=DEFAULT_TASK, env=BENCHMARK, model=MODEL_NAME)
-        await env_client.reset(task_id=DEFAULT_TASK, seed=42)
+    # 1. Reset (single episode, locked seed for reproducibility)
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+    await env_client.reset(task_id=task_id, seed=42)
 
-        max_steps_limit = TASK_MAX_STEPS.get(DEFAULT_TASK, 150)
-        task_log = {"task": DEFAULT_TASK, "steps": [], "seed": 42, "provider": _provider}
-        rewards_list: List[float] = []
-        done = False
-        step_count = 0
-        final_success = False
-        final_score = 0.5  # neutral fallback
-        llm_consecutive_failures = 0  # track consecutive LLM failures
+    max_steps_limit = TASK_MAX_STEPS.get(task_id, 100)
+    rewards_list: List[float] = []
+    done = False
+    step_count = 0
+    final_score = 0.5  # neutral fallback
+    llm_consecutive_failures = 0
 
-        # 2. Episode Loop: observe -> reason -> act -> reward
-        while not done and step_count < max_steps_limit:
-            step_count += 1
+    # 2. Episode Loop
+    while not done and step_count < max_steps_limit:
+        step_count += 1
+        state_text = await env_client.get_market_state()
+        state_text_safe = state_text.encode("ascii", "replace").decode("ascii")
 
-            # 3. Observe: Get structured market state
-            state_text = await env_client.get_market_state()
+        # Fallback values
+        rem = 1000
+        steps_left = 10
+        total_shares = 100000
+        current_is = 0.0
 
-            # ASCII-safe: strip any remaining non-ASCII from state text
-            state_text_safe = state_text.encode("ascii", "replace").decode("ascii")
+        try:
+            if "Remaining:" in state_text:
+                rem_part = state_text.split("Remaining:")[1].split("shares")[0].replace(",", "").strip()
+                rem = int(rem_part)
+                steps_left_part = state_text.split("Time left:")[1].split("steps")[0].strip()
+                steps_left = int(steps_left_part)
 
-            # 4. Heuristic baseline rate (always computed as fallback)
-            suggested_rate = 0.25  # default near-max for large orders
+                if "Executed:" in state_text:
+                    exec_line = state_text.split("Executed:")[1].split("\n")[0]
+                    if "/" in exec_line:
+                        total_shares = int(exec_line.split("/")[1].replace(",", "").split()[0])
+                
+                if "Your IS:" in state_text:
+                    current_is = float(state_text.split("Your IS:")[1].replace("bps", "").strip().split()[0])
+        except Exception:
+            pass
+
+        # 4. Heuristic baseline
+        if task_id == "task_4":
+            suggested_rate = heuristic.calculate_rate_with_jitter(rem, total_shares, steps_left, current_is)
+        else:
+            suggested_rate = heuristic.calculate_rate(rem, total_shares, steps_left, current_is)
+        
+        suggested_rate = max(0.01, min(0.25, suggested_rate))
+        final_rate = suggested_rate
+
+        # 5. LLM layer
+        if llm_active and client_llm:
             try:
-                if "Remaining:" in state_text:
-                    rem = int(state_text.split("Remaining:")[1].split("shares")[0]
-                              .replace(",", "").strip())
-                    steps_left = int(state_text.split("Time left:")[1].split("steps")[0].strip())
-
-                    total_shares = rem
-                    if "Executed:" in state_text and "/" in state_text.split("Executed:")[1].split("\n")[0]:
-                        exec_line = state_text.split("Executed:")[1].split("\n")[0]
-                        total_shares = int(exec_line.split("/")[1].strip()
-                                          .replace(",", "").split()[0])
-
-                    current_is = 0.0
-                    if "Your IS:" in state_text:
-                        raw = state_text.split("Your IS:")[1].strip()
-                        current_is = float(raw.lower().replace("bps", "")
-                                          .strip().split()[0])
-
-                    # Use jitter for adversary task to evade HFT detection
-                    if DEFAULT_TASK == "task4_adversarial":
-                        suggested_rate = heuristic.calculate_rate_with_jitter(
-                            rem, total_shares, steps_left, current_is
-                        )
-                    else:
-                        suggested_rate = heuristic.calculate_rate(
-                            rem, total_shares, steps_left, current_is
-                        )
-                    suggested_rate = max(0.01, min(0.25, suggested_rate))
+                user_msg = f"STEP: {step_count} | SHARES_REM: {rem} | BPS_IS: {current_is}\nACTION_NEEDED: Set rate relative to optimal suggestion ({suggested_rate:.4f})"
+                resp = await asyncio.to_thread(
+                    client_llm.chat.completions.create,
+                    model=MODEL_NAME,
+                    messages=[
+                        {"role": "system", "content": HYBRID_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg}
+                    ],
+                    temperature=0.1,
+                    max_tokens=150,
+                    response_format={"type": "json_object"} if SUPPORTS_JSON_MODE else None
+                )
+                decision = json.loads(resp.choices[0].message.content or "{}")
+                multiplier = float(decision.get("rate_multiplier", 1.0))
+                final_rate = suggested_rate * max(0.5, min(2.0, multiplier))
             except Exception:
-                pass  # fallback to default 0.25
+                pass
 
-            final_rate = suggested_rate
+        final_rate = max(0.01, min(0.25, final_rate))
+        execute_result = await env_client.execute_trade(participation_rate=final_rate)
+        grader_score = await env_client.get_reward()
 
-            # 5. LLM cognitive layer (only if API key available)
-            if llm_active and client_llm:
-                try:
-                    prompt = HYBRID_SYSTEM_PROMPT
-                    user_msg = f"STEP: {step_count} | SHARES_REM: {rem} | BPS_IS: {current_is}\nACTION_NEEDED: Set rate relative to optimal suggestion ({suggested_rate:.4f})"
+        # Clamp reward to (0, 1) to pass validator
+        grader_score = max(0.01, min(0.99, grader_score))
+        rewards_list.append(grader_score)
 
-                    kw = {}
-                    if SUPPORTS_JSON_MODE:
-                        kw["response_format"] = {"type": "json_object"}
+        done_bool = "EPISODE COMPLETE" in execute_result or step_count >= max_steps_limit
+        log_step(step=step_count, action=f"{final_rate:.4f}", reward=grader_score, done=done_bool, error=None)
+        if done_bool: done = True
 
-                    resp = await asyncio.to_thread(
-                        client_llm.chat.completions.create,
-                        model=MODEL_NAME,
-                        messages=[
-                            {"role": "system", "content": prompt},
-                            {"role": "user", "content": user_msg}
-                        ],
-                        temperature=0.1,
-                        max_tokens=150,
-                        **kw
-                    )
-                    raw_content = resp.choices[0].message.content or ""
-                    llm_consecutive_failures = 0  # reset on success
+    final_score = max(rewards_list) if rewards_list else 0.1
+    log_end(success=final_score >= 0.8, steps=step_count, score=final_score, rewards=rewards_list)
 
-                    # Robust JSON parsing with fallback
-                    decision = {}
-                    try:
-                        decision = json.loads(raw_content)
-                    except json.JSONDecodeError:
-                        # Try to extract JSON from markdown code blocks
-                        import re
-                        json_match = re.search(r'\{[^}]+\}', raw_content)
-                        if json_match:
-                            try:
-                                decision = json.loads(json_match.group())
-                            except Exception:
-                                pass
-
-                    _raw_mult = decision.get("rate_multiplier")
-                    multiplier = float(_raw_mult if _raw_mult is not None else 1.0)
-                    multiplier = max(0.5, min(2.0, multiplier))
-                    final_rate = suggested_rate * multiplier
-
-                except Exception as e:
-                    llm_consecutive_failures += 1
-                    if llm_consecutive_failures <= 3:
-                        # Log first 3 failures only
-                        err_str = str(e)[:80].encode("ascii", "replace").decode("ascii")
-                        print(f"[WARN] LLM call failed at step {step_count}: {err_str}", flush=True)
-                    if llm_consecutive_failures >= 5:
-                        # Disable LLM after 5 consecutive failures (bad key / network)
-                        llm_active = False
-                        print(f"[WARN] LLM disabled after {llm_consecutive_failures} consecutive failures -- heuristic-only mode", flush=True)
-
-            # Clamp to valid action space [0.01, 0.25]
-            final_rate = max(0.01, min(0.25, final_rate))
-
-            # 6. Act: Execute trade — get grader score (0-1) and done flag from response
-            execute_result = await env_client.execute_trade(participation_rate=final_rate)
-            # get_reward() returns grader score in [0.0, 1.0] per OpenEnv spec
-            grader_score = await env_client.get_reward()
-
-            # Clamp reward to strictly open (0, 1) per reference script validator pattern
-            if grader_score <= 0.0:
-                grader_score = 0.01
-            elif grader_score >= 1.0:
-                grader_score = 0.99
-
-            rewards_list.append(grader_score)
-
-            # 7. Done detection: step-count guard + text signal (obs.done via HTTP)
-            done_bool = (
-                "EPISODE COMPLETE" in execute_result
-                or "Episode already complete" in execute_result
-                or "NOT INITIALIZED" in execute_result
-                or step_count >= max_steps_limit
-            )
-
-            log_step(
-                step=step_count,
-                action=f"{final_rate:.4f}",
-                reward=grader_score,
-                done=done_bool,
-                error=None
-            )
-
-            task_log["steps"].append({
-                "step": step_count,
-                "action": round(final_rate, 4),
-                "reward": round(grader_score, 4),
-                "suggested_rate": round(suggested_rate, 4),
-            })
-
-            if done_bool:
-                done = True
-
-        # 8. Final score: use max reward across episode (matches reference script)
-        final_score = max(rewards_list) if rewards_list else 0.1
-        final_score = min(max(final_score, 0.01), 0.99)  # clamp to open (0, 1)
-        final_success = final_score >= SUCCESS_SCORE_THRESHOLD
-
-        # 9. Episode end logging
-        log_end(
-            success=final_success,
-            steps=step_count,
-            score=final_score,
-            rewards=rewards_list
-        )
-        full_trajectory.append(task_log)
+async def run_hybrid_inference():
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    client_llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
+    
+    async with TradeExecClient(base_url=ENV_BASE_URL) as env_client:
+        for tid in ["task_1", "task_2", "task_3"]:
+            await run_hybrid_inference_for_task(env_client, client_llm, tid)
 
     # 10. Save trajectory for inspection
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

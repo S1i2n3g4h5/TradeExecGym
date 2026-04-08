@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 # ── OpenEnv Spec: Typed models for Observation, Action, Reward ───────────────
 
-class TradeObservation(BaseModel):
+class TradeObservation(Observation):
     """Structured numeric observation returned at each environment step."""
     price_norm: float = Field(description="current_price / arrival_price (1.0 = no drift)")
     progress_pct: float = Field(ge=0.0, le=1.0, description="step_count / max_steps")
@@ -56,7 +56,7 @@ class TradeObservation(BaseModel):
     info: dict = Field(default_factory=dict, description="Additional metadata")
 
 
-class TradeAction(BaseModel):
+class TradeAction(Action):
     """Validated action for one environment step."""
     participation_rate: float = Field(
         default=0.05, ge=0.0, le=0.25,
@@ -95,7 +95,7 @@ class TradeExecEnvironment(MCPEnvironment):
     def __init__(self) -> None:
         # Episode state (initialised here; properly set in reset())
         self._episode_id: str = str(uuid4())
-        self._task_id: str = "task1_twap_beater"
+        self._task_id: str = "task_1"
         self._step_count: int = 0
         self._total_shares: int = 100_000
         self._shares_remaining: int = 100_000
@@ -127,6 +127,7 @@ class TradeExecEnvironment(MCPEnvironment):
         mcp.tool()(self.get_baseline_comparison)
         mcp.tool()(self.execute_trade)
         mcp.tool()(self.get_reward)
+        mcp.tool()(self.grade)
 
         # Initialise the MCP base class after tools are defined
         super().__init__(mcp)
@@ -173,6 +174,10 @@ class TradeExecEnvironment(MCPEnvironment):
         """
         return self._compute_grader_score()
 
+    def grade(self) -> float:
+        """Alias for get_reward() to satisfy some OpenEnv validator conventions."""
+        return self.get_reward()
+
     # ── OpenEnv API ─────────────────────────────────────────────────────────
 
     def reset(
@@ -189,7 +194,18 @@ class TradeExecEnvironment(MCPEnvironment):
             episode_id: Custom episode ID.
             task_id: One of the task keys defined in ``TASK_CONFIGS``.
         """
-        tid = task_id or kwargs.get("task_id", "task1_twap_beater")
+        tid = task_id or kwargs.get("task_id", "task_1")
+        
+        # Mapping for task_1..task_5 style IDs
+        task_mapping = {
+            "task_1": "task1_twap_beater",
+            "task_2": "task2_vwap_optimizer",
+            "task_3": "task3_volatile_execution",
+            "task_4": "task4_adversarial",
+            "task_5": "task5_deadline_pressure"
+        }
+        tid = task_mapping.get(tid, tid)
+        
         self.active_task = get_task(tid)
 
         # Reset episode state

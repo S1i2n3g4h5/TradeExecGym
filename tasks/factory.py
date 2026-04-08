@@ -8,6 +8,11 @@ from .task5_deadline import TaskDeadlinePressure
 def get_task(task_id: str) -> BaseTradeTask:
     """Factory method to get a task instance by task_id."""
     registry = {
+        "task_1": TaskTwapBeater,
+        "task_2": TaskVwapOptimizer,
+        "task_3": TaskVolatileExecution,
+        "task_4": TaskAdversary,
+        "task_5": TaskDeadlinePressure,
         "task1_twap_beater": TaskTwapBeater,
         "task2_vwap_optimizer": TaskVwapOptimizer,
         "task3_volatile_execution": TaskVolatileExecution,
