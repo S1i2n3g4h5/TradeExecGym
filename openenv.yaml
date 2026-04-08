@@ -23,57 +23,22 @@ observation_class: TradeObservation
 
 tasks:
   - id: task_1
-    title: "TWAP Beater"
     name: "TWAP Beater"
     difficulty: easy
-    generator: task_generators:generate_task_1
-    grader: graders:grade_task_1
-    has_grader: true
     description: >
       Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
       Exploit intraday volume patterns.
 
   - id: task_2
-    title: "VWAP Optimizer"
     name: "VWAP Optimizer"
     difficulty: medium
-    generator: task_generators:generate_task_2
-    grader: graders:grade_task_2
-    has_grader: true
     description: >
       Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
       Beat VWAP benchmark.
 
   - id: task_3
-    title: "Volatile Execution"
     name: "Volatile Execution"
     difficulty: hard
-    generator: task_generators:generate_task_3
-    grader: graders:grade_task_3
-    has_grader: true
     description: >
       Buy 400,000 shares under 3x normal volatility (sigma=0.06).
       Use dark pool routing to bypass lit-venue impact.
-
-  - id: task_4
-    title: "HFT Adversary"
-    name: "HFT Adversary"
-    difficulty: expert
-    generator: task_generators:generate_task_4
-    grader: graders:grade_task_4
-    has_grader: true
-    description: >
-      Sell 600,000 shares while an HFT adversary exploits predictable patterns.
-      Jitter participation rates to avoid dual-gate detection.
-
-  - id: task_5
-    title: "Deadline Pressure"
-    name: "Deadline Pressure"
-    difficulty: extreme
-    generator: task_generators:generate_task_5
-    grader: graders:grade_task_5
-    has_grader: true
-    description: >
-      Buy 1,000,000 shares in exactly 80 steps. Completion is mandatory.
-      Score = 0.0 unless >=99.9% of shares are filled. No partial credit.
-

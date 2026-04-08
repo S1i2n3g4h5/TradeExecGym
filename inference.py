@@ -29,7 +29,7 @@ API_BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 BENCHMARK = "trade-exec-gym"
-DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_4")
+DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_1")
 MAX_STEPS = int(os.getenv("MAX_STEPS", "120"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
 

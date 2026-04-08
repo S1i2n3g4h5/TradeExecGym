@@ -44,7 +44,7 @@ class TradeState(State):
 
 # --- Submission Compatibility Tier ---
 class TaskInfo(BaseModel):
-    task_id: str = "task_4"
+    task_id: str = "task_1"
     description: str = "Execute the trade mandate efficiently."
 
 class YourRlObservation(BaseModel):
