@@ -74,8 +74,8 @@ tasks:
   - id: task_1
     name: "TWAP Beater"
     difficulty: easy
-    generator: "server.tasks:generate_task_1"
-    grader: "server.tasks:grade_task_1"
+    generator: "server.tasks:task_1"
+    grader: "server.tasks:grade_task1"
     has_grader: true
     description: >
       Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
@@ -88,8 +88,8 @@ tasks:
   - id: task_2
     name: "VWAP Optimizer"
     difficulty: medium
-    generator: "server.tasks:generate_task_2"
-    grader: "server.tasks:grade_task_2"
+    generator: "server.tasks:task_2"
+    grader: "server.tasks:grade_task2"
     has_grader: true
     description: >
       Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
@@ -102,8 +102,8 @@ tasks:
   - id: task_3
     name: "Volatile Execution"
     difficulty: hard
-    generator: "server.tasks:generate_task_3"
-    grader: "server.tasks:grade_task_3"
+    generator: "server.tasks:task_3"
+    grader: "server.tasks:grade_task3"
     has_grader: true
     description: >
       Buy 400,000 shares under 3x normal volatility (sigma=0.06).
