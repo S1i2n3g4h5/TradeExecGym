@@ -292,6 +292,11 @@ class TaskDeadlinePressure(BaseTradeTask):
 
 def get_task(task_id: str) -> BaseTradeTask:
     registry = {
+        1: TaskTwapBeater,
+        2: TaskVwapOptimizer,
+        3: TaskVolatileExecution,
+        4: TaskAdversary,
+        5: TaskDeadlinePressure,
         "task_1": TaskTwapBeater,
         "task_2": TaskVwapOptimizer,
         "task_3": TaskVolatileExecution,
