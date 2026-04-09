@@ -32,58 +32,6 @@ from openenv.core import create_app
 from server.trade_environment import TradeExecEnvironment
 from models import TradeAction, TradeObservation
 
-GLOBAL_ENV = None
-
-TASKS: List[Dict[str, Any]] = [
-    {
-        "id": "task_1",
-        "name": "TWAP Beater",
-        "difficulty": "easy",
-        "description": (
-            "Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline. "
-            "Exploit intraday volume patterns."
-        ),
-        "max_steps": 30,
-        "grader": "server.tasks:grade_task_1",
-        "task_grader": "server.tasks:grade_task_1",
-        "has_grader": True,
-    },
-    {
-        "id": "task_2",
-        "name": "VWAP Optimizer",
-        "difficulty": "medium",
-        "description": (
-            "Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve. "
-            "Beat VWAP benchmark."
-        ),
-        "max_steps": 60,
-        "grader": "server.tasks:grade_task_2",
-        "task_grader": "server.tasks:grade_task_2",
-        "has_grader": True,
-    },
-    {
-        "id": "task_3",
-        "name": "Volatile Execution",
-        "difficulty": "hard",
-        "description": (
-            "Buy 400,000 shares under 3x normal volatility (sigma=0.06). "
-            "Use dark pool routing to bypass lit-venue impact."
-        ),
-        "max_steps": 90,
-        "grader": "server.tasks:grade_task_3",
-        "task_grader": "server.tasks:grade_task_3",
-        "has_grader": True,
-    },
-]
-
-
-def make_env() -> TradeExecEnvironment:
-    """Return a singleton env instance so /reset and /step share state."""
-    global GLOBAL_ENV
-    if GLOBAL_ENV is None:
-        GLOBAL_ENV = TradeExecEnvironment()
-    return GLOBAL_ENV
-
 # ── Singleton Environment Management ─────────────────────────────────────────
 # Preserve state across stateless HTTP calls (/reset -> /step)
 _GLOBAL_ENV = None

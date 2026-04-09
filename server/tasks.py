@@ -79,18 +79,33 @@ def _grade_record_task2(record: EpisodeRecord) -> float:
     return _clamp01(score)
 
 
-def _grade_record_task3(record: EpisodeRecord) -> float:
+def _grade_record_task4(record: EpisodeRecord) -> float:
     """
-    Hard task — Volatile Execution.
-    Adds mild dark-pool usage reward when volatility task conditions apply.
+    Expert task — Adversarial HFT.
+    Focus on completion while evading front-running (reflected in IS).
     """
     completion = record.shares_executed / max(1, record.total_shares)
-    dp_bonus = min(0.05, max(0.0, record.dark_pool_usage))
     score = (
         0.50 * _is_quality_score(record.current_is_bps, record.ac_is_bps)
         + 0.30 * completion
         + _baseline_bonus(record.current_is_bps, record.twap_is_bps, record.vwap_is_bps)
-        + dp_bonus
+    )
+    return _clamp01(score)
+
+
+def _grade_record_task5(record: EpisodeRecord) -> float:
+    """
+    Hard task — Deadline Pressure.
+    Severe penalty for not finishing the order.
+    """
+    completion = record.shares_executed / max(1, record.total_shares)
+    if completion < 0.999:
+        return _clamp01(max(0.0001, completion * 0.15))
+    
+    score = (
+        0.50 * _is_quality_score(record.current_is_bps, record.ac_is_bps)
+        + 0.30 * completion
+        + _baseline_bonus(record.current_is_bps, record.twap_is_bps, record.vwap_is_bps)
     )
     return _clamp01(score)
 
@@ -117,6 +132,10 @@ def grade_episode(record: EpisodeRecord) -> float:
             score = _grade_record_task2(record)
         elif record.task_id == 3:
             score = _grade_record_task3(record)
+        elif record.task_id == 4:
+            score = _grade_record_task4(record)
+        elif record.task_id == 5:
+            score = _grade_record_task5(record)
         else:
             score = 0.0001
     return _clamp01(score)
@@ -331,6 +350,10 @@ def _task_num(task_id_like: Any) -> int:
         return 2
     if tid in {"3", "task_3", "task3_volatile_execution"}:
         return 3
+    if tid in {"4", "task_4", "task4_adversarial"}:
+        return 4
+    if tid in {"5", "task_5", "task5_deadline_pressure"}:
+        return 5
     return 1
 
 
@@ -338,7 +361,7 @@ def _payload_to_record(task_num: int, payload: Dict[str, Any]) -> EpisodeRecord:
     return EpisodeRecord(
         task_id=task_num,
         shares_executed=int(payload.get("shares_executed", payload.get("executed_shares", payload.get("filled_shares", 0)))),
-        total_shares=int(payload.get("total_shares", 100_000 if task_num == 1 else (250_000 if task_num == 2 else 400_000))),
+        total_shares=int(payload.get("total_shares", 100_000 if task_num == 1 else (250_000 if task_num == 2 else (400_000 if task_num == 3 else (600_000 if task_num == 4 else 1_000_000))))),
         current_is_bps=float(payload.get("current_is", payload.get("current_is_bps", payload.get("is_bps", 0.0)))),
         twap_is_bps=float(payload.get("twap_is", 25.0)),
         vwap_is_bps=float(payload.get("vwap_is", 20.0)),
@@ -374,6 +397,22 @@ def task_3(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return out
 
 
+def task_4(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    payload = _as_payload(*args, **kwargs)
+    out = {"task_id": "task_4"}
+    if payload.get("seed") is not None:
+        out["seed"] = int(payload["seed"])
+    return out
+
+
+def task_5(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    payload = _as_payload(*args, **kwargs)
+    out = {"task_id": "task_5"}
+    if payload.get("seed") is not None:
+        out["seed"] = int(payload["seed"])
+    return out
+
+
 def generate_task_1(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return task_1(*args, **kwargs)
 
@@ -386,74 +425,29 @@ def generate_task_3(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return task_3(*args, **kwargs)
 
 
-def grade_task1(*args: Any, **kwargs: Any) -> float:
-    if args and isinstance(args[0], EpisodeRecord):
-        return _grade_record_task1(args[0])
-    payload = _as_payload(*args, **kwargs)
-    rec = _payload_to_record(1, payload)
-    return _clamp01(_grade_record_task1(rec))
+def generate_task_4(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    return task_4(*args, **kwargs)
 
 
-def grade_task2(*args: Any, **kwargs: Any) -> float:
-    if args and isinstance(args[0], EpisodeRecord):
-        return _grade_record_task2(args[0])
-    payload = _as_payload(*args, **kwargs)
-    rec = _payload_to_record(2, payload)
-    return _clamp01(_grade_record_task2(rec))
+def generate_task_5(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    return task_5(*args, **kwargs)
 
 
-def grade_task3(*args: Any, **kwargs: Any) -> float:
-    if args and isinstance(args[0], EpisodeRecord):
-        return _grade_record_task3(args[0])
-    payload = _as_payload(*args, **kwargs)
-    rec = _payload_to_record(3, payload)
-    return _clamp01(_grade_record_task3(rec))
+def grade_task1(record: EpisodeRecord) -> float:
+    return _grade_record_task1(record)
 
 
-def grade_task_1(*args: Any, **kwargs: Any) -> float:
-    return grade_task1(*args, **kwargs)
+def grade_task2(record: EpisodeRecord) -> float:
+    return _grade_record_task2(record)
 
 
-def grade_task_2(*args: Any, **kwargs: Any) -> float:
-    return grade_task2(*args, **kwargs)
+def grade_task3(record: EpisodeRecord) -> float:
+    return _grade_record_task3(record)
 
 
-def grade_task_3(*args: Any, **kwargs: Any) -> float:
-    return grade_task3(*args, **kwargs)
+def grade_task4(record: EpisodeRecord) -> float:
+    return _grade_record_task4(record)
 
 
-def task_grader(*args: Any, **kwargs: Any) -> float:
-    payload = _as_payload(*args, **kwargs)
-    n = _task_num(payload.get("task_id", payload.get("id", "task_1")))
-    if n == 1:
-        return grade_task1(payload)
-    if n == 2:
-        return grade_task2(payload)
-    return grade_task3(payload)
-
-
-__all__ = [
-    "SEED_CONFIG",
-    "EpisodeRecord",
-    "grade_task1",
-    "grade_task2",
-    "grade_task3",
-    "grade_episode",
-    "BaseTradeTask",
-    "TaskTwapBeater",
-    "TaskVwapOptimizer",
-    "TaskVolatileExecution",
-    "TaskAdversary",
-    "TaskDeadlinePressure",
-    "get_task",
-    "task_1",
-    "task_2",
-    "task_3",
-    "generate_task_1",
-    "generate_task_2",
-    "generate_task_3",
-    "grade_task_1",
-    "grade_task_2",
-    "grade_task_3",
-    "task_grader",
-]
+def grade_task5(record: EpisodeRecord) -> float:
+    return _grade_record_task5(record)
