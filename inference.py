@@ -1,7 +1,7 @@
 """Robust baseline runner for TradeExecGym.
 
 This script is validator-friendly:
-- Uses injected API_BASE_URL + API_KEY for LLM proxy calls when available.
+- Uses injected API_BASE_URL + HF_TOKEN/API_KEY for LLM proxy calls when available.
 - Falls back to a deterministic policy when proxy config is missing/unavailable.
 - Never crashes on transient model/network/environment errors.
 """
@@ -25,12 +25,13 @@ if hasattr(sys.stdout, "reconfigure"):
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("API_BASE_URL")
-API_KEY = os.getenv("API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = HF_TOKEN or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 BENCHMARK = "trade-exec-gym"
 DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_1")
-MAX_STEPS = int(os.getenv("MAX_STEPS", "120"))
+MAX_STEPS = int(os.getenv("MAX_STEPS", "40"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
 DEFAULT_SPACE_URL = "https://singhsa-tradeexecgym.hf.space"
 REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
@@ -106,7 +107,7 @@ def _build_llm_client() -> Optional[OpenAI]:
     # Keep fallback for local dry-runs only.
     try:
         base_url = os.environ["API_BASE_URL"].strip()
-        api_key = os.environ["API_KEY"].strip()
+        api_key = (os.environ.get("HF_TOKEN") or os.environ["API_KEY"]).strip()
     except KeyError:
         if not API_BASE_URL or not API_KEY:
             return None
@@ -135,6 +136,30 @@ def _ensure_proxy_call(llm_client: Optional[OpenAI]) -> str:
         return ""
     except Exception as exc:
         return f"proxy_preflight_error={type(exc).__name__}: {exc}"
+
+
+def _one_line(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def log_start(task: str) -> None:
+    print(f"[START] task={task} env={BENCHMARK} model={MODEL_NAME}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: str = "") -> None:
+    done_str = "true" if done else "false"
+    error_str = _one_line(error) if error else "null"
+    action_str = _one_line(action)
+    print(
+        f"[STEP] step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    success_str = "true" if success else "false"
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.01"
+    print(f"[END] success={success_str} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
 def get_model_command(
@@ -171,10 +196,17 @@ def get_model_command(
 
 def run_task(env_url: str) -> None:
     llm_client = _build_llm_client()
+    current_task_id = DEFAULT_TASK_ID
+    log_start(current_task_id)
+
     if llm_client is None and REQUIRE_LLM_PROXY:
-        print(
-            "[END] success=false steps=0 score=0.01 rewards=0.01 error='missing API_BASE_URL/API_KEY for required proxy call'",
-            flush=True,
+        err = "missing API_BASE_URL and/or HF_TOKEN/API_KEY for required proxy call"
+        log_step(1, _fallback_command(1), 0.01, True, err)
+        log_end(
+            success=False,
+            steps=1,
+            score=0.01,
+            rewards=[0.01],
         )
         raise SystemExit(1)
 
@@ -197,17 +229,12 @@ def run_task(env_url: str) -> None:
                 obs = result.observation
                 last_output = obs.command_output or ""
             except Exception as exc:
-                print(
-                    f"[END] success=false steps=0 score=0.01 rewards=0.01 error={type(exc).__name__}: {exc}",
-                    flush=True,
-                )
+                err = f"{type(exc).__name__}: {exc}"
+                log_step(1, _fallback_command(1), 0.01, True, err)
+                log_end(success=False, steps=1, score=0.01, rewards=[0.01])
                 return
 
-            current_task_id = obs.task.task_id if obs and obs.task else DEFAULT_TASK_ID
-            print(
-                f"[START] task={current_task_id} env={BENCHMARK} model={MODEL_NAME}",
-                flush=True,
-            )
+            current_task_id = obs.task.task_id if obs and obs.task else current_task_id
 
             for step in range(1, MAX_STEPS + 1):
                 steps = step
@@ -256,28 +283,31 @@ def run_task(env_url: str) -> None:
                 history.append(f"Step {step}: rate={p_rate:.3f} reward={reward:.2f}")
                 rewards.append(reward)
 
-                done_str = "true" if done else "false"
-                print(
-                    f"[STEP] step={step} action={command!r} reward={reward:.2f} done={done_str} error={last_error!r}",
-                    flush=True,
-                )
+                log_step(step, command, reward, done, last_error)
 
                 if task_achieved or done:
                     break
     except Exception as exc:
-        print(
-            f"[END] success=false steps={steps} score=0.01 rewards=0.01 error={type(exc).__name__}: {exc}",
-            flush=True,
+        err = f"{type(exc).__name__}: {exc}"
+        if steps == 0:
+            steps = 1
+            log_step(steps, _fallback_command(steps), 0.01, True, err)
+            rewards = [0.01]
+        log_end(
+            success=False,
+            steps=steps,
+            score=0.01,
+            rewards=rewards if rewards else [0.01],
         )
         return
 
     score = max(rewards) if rewards else 0.01
     score = min(max(score, 0.01), 0.99)
-    success_str = "true" if task_achieved else "false"
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.01"
-    print(
-        f"[END] success={success_str} steps={steps} score={score:.2f} rewards={rewards_str}",
-        flush=True,
+    log_end(
+        success=task_achieved,
+        steps=steps,
+        score=score,
+        rewards=rewards if rewards else [0.01],
     )
 
 
