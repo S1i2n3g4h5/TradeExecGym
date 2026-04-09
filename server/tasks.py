@@ -19,7 +19,7 @@ except Exception:
 
 
 def _clamp01(x: float) -> float:
-    return round(max(0.01, min(0.99, float(x))), 4)
+    return round(max(0.0001, min(0.9999, float(x))), 4)
 
 
 @dataclass

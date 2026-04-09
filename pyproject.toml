@@ -19,9 +19,13 @@ dependencies = [
     "gradio",
     "matplotlib",
     "pandas",
-    "torch>=2.1.0",
-    "stable-baselines3>=2.1.0",
     "tensorboard",
+]
+
+[project.optional-dependencies]
+training = [
+    "torch==2.1.0",
+    "stable-baselines3==2.1.0",
 ]
 
 [project.scripts]

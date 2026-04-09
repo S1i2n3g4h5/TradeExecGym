@@ -61,6 +61,33 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     """
     SUPPORTS_CONCURRENT_SESSIONS = True
 
+    @staticmethod
+    def _normalize_task(task_id: Optional[int | str]) -> tuple[int, str]:
+        """Accept both canonical and legacy task identifiers."""
+        mapping = {
+            1: (1, "task_1"),
+            2: (2, "task_2"),
+            3: (3, "task_3"),
+            4: (4, "task_4"),
+            5: (5, "task_5"),
+            "1": (1, "task_1"),
+            "2": (2, "task_2"),
+            "3": (3, "task_3"),
+            "4": (4, "task_4"),
+            "5": (5, "task_5"),
+            "task_1": (1, "task_1"),
+            "task_2": (2, "task_2"),
+            "task_3": (3, "task_3"),
+            "task_4": (4, "task_4"),
+            "task_5": (5, "task_5"),
+            "task1_twap_beater": (1, "task1_twap_beater"),
+            "task2_vwap_optimizer": (2, "task2_vwap_optimizer"),
+            "task3_volatile_execution": (3, "task3_volatile_execution"),
+            "task4_adversarial": (4, "task4_adversarial"),
+            "task5_deadline_pressure": (5, "task5_deadline_pressure"),
+        }
+        return mapping.get(task_id, (1, "task_1"))
+
     def __init__(self, task_id: int = 1) -> None:
         # Episode state (initialised here; properly set in reset())
         self._episode_id: str = str(uuid.uuid4())
@@ -83,6 +110,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         self.venue_router: VenueRouter = None
         self.heuristic = AlmgrenChrissHeuristic()
         self._last_reward: float = 0.0
+        self._last_grade: float = 0.01
         self._prev_is: Optional[float] = None
 
         # Phase 1: Shadow Baseline Caching
@@ -220,7 +248,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         return self._build_observation(reward=None, done=self._episode_done)
 
     def get_metadata(self) -> Dict[str, Any]:
-        """Returns environment metadata for the dashboard."""
+        """Return environment metadata plus task/grader runtime state."""
         return {
             "name": "trade_exec_gym",
             "description": (
@@ -230,6 +258,14 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             "version": "1.0.0",
             "author": "singh",
             "documentation_url": "https://huggingface.co",
+            "episode_id": self._episode_id,
+            "task_id": self._task_id,
+            "task_number": self.task_id,
+            "max_steps": self._max_steps,
+            "total_shares": self._total_shares,
+            "done": self._episode_done,
+            "last_grade": max(0.01, min(0.99, float(self._last_grade))),
+            "available_tasks": [1, 2, 3],
         }
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
@@ -247,15 +283,11 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
              np.random.seed(seed)
 
         if task_id is not None:
-            if str(task_id).startswith("task_"):
-                self.task_id = int(str(task_id).replace("task_", ""))
-            else:
-                try:
-                    self.task_id = int(task_id)
-                except ValueError:
-                    self.task_id = 1
-        
-        tid = f"task_{self.task_id}"
+            self.task_id, self._task_id = self._normalize_task(task_id)
+        else:
+            self.task_id, self._task_id = self._normalize_task(self._task_id or self.task_id)
+
+        tid = self._task_id
         self._task_id = tid
         self.active_task = get_task(self._task_id)
 
@@ -271,6 +303,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         self._episode_done = False
         self._baseline_step = 0
         self._last_reward = 0.0
+        self._last_grade = 0.01
         self._prev_is = None
         self._milestones_reached = set()
 
@@ -288,6 +321,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         if hasattr(self.active_task, "_episode_seed"):
             self.active_task._episode_seed = seed if seed is not None else 42
         self.active_task.reset()
+        self._last_grade = self._compute_grader_score()
 
         description = self.active_task.description
         winning_secret = self.active_task.get_winning_secret()
@@ -347,6 +381,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         # 2. Compute rewards and done status
         reward = self._compute_grader_score()
         reward = max(0.01, min(0.99, reward))
+        self._last_grade = reward
         
         # 3. Build observation
         obs = self._build_observation(reward=reward, done=self._episode_done)
@@ -357,12 +392,23 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     def _build_observation(self, reward: Optional[float] = None, done: bool = False) -> TradeObservation:
         """Build a TradeObservation from current state."""
         numeric_obs = self._build_numeric_observation()
-        metadata = {
+        grade_value = max(0.01, min(0.99, float(self._last_grade)))
+        runtime_task_info = {
             "task_id": self._task_id,
+            "task_number": self.task_id,
+            "task_name": getattr(self.active_task, "task_id", self._task_id),
             "max_steps": self._max_steps,
             "total_shares": self._total_shares,
-            "observation": numeric_obs,
+            "grade": grade_value,
+            "last_grade": grade_value,
+            "has_grader": True,
+            "grader": f"grade_task_{self.task_id}",
+            "available_tasks": [1, 2, 3],
         }
+        metadata = dict(runtime_task_info)
+        metadata["observation"] = numeric_obs
+        info = dict(numeric_obs)
+        info.update(runtime_task_info)
         return TradeObservation(
             day=0, # SOR is intraday
             step=self._step_count,
@@ -376,7 +422,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             metadata=metadata,
             task_id=self._task_id,
             task_description=self.active_task.description if self.active_task else "Execute trade efficiently.",
-            info=numeric_obs,
+            info=info,
         )
 
 
