@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from openenv.core import Action, Environment, Observation
-from models import TradeAction, TradeObservation, TradeState
+from models import TradeAction, TradeObservation, TradeReward, TradeState
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,23 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"VWAP Benchmark: {vwap_is:.1f} bps\n"
             f"Your IS Performance: {current_is:.1f} bps"
         )
+
+    def execute_trade(
+        self,
+        participation_rate: float = 0.05,
+        use_dark_pool: bool = False,
+        dark_pool_fraction: float = 0.0,
+    ) -> str:
+        """Compatibility helper for legacy tests and scripts."""
+        return self.execute_trade_logic(
+            participation_rate=participation_rate,
+            use_dark_pool=use_dark_pool,
+            dark_pool_fraction=dark_pool_fraction,
+        )
+
+    def get_reward(self) -> float:
+        """Compatibility helper returning latest scalar reward."""
+        return float(self._last_reward)
 
     def execute_trade_logic(
         self,
@@ -343,6 +360,13 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
 
     def _build_observation(self, reward: Optional[float] = None, done: bool = False) -> TradeObservation:
         """Build a TradeObservation from current state."""
+        numeric_obs = self._build_numeric_observation()
+        metadata = {
+            "task_id": self._task_id,
+            "max_steps": self._max_steps,
+            "total_shares": self._total_shares,
+            "observation": numeric_obs,
+        }
         return TradeObservation(
             day=0, # SOR is intraday
             step=self._step_count,
@@ -353,7 +377,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             text_summary=self._build_market_state_text(),
             done=done,
             reward=reward,
-            info=self._build_numeric_observation()
+            metadata=metadata,
+            info=numeric_obs,
         )
 
 

@@ -42,6 +42,15 @@ class TradeState(State):
     price_norm: float = Field(1.0, description="Normalized current price")
     done: bool = Field(False, description="Episode completion status")
 
+
+class TradeReward(BaseModel):
+    """Legacy reward model kept for compatibility with local validation tests."""
+    model_config = {"extra": "allow"}
+    value: float = 0.0
+    dense: float = 0.0
+    sparse: float = 0.0
+    terminal: float = 0.0
+
 # --- Submission Compatibility Tier ---
 class TaskInfo(BaseModel):
     task_id: str = "task_1"
