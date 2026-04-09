@@ -14,7 +14,6 @@ import sys
 import textwrap
 from typing import List, Optional, Tuple
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from client import YourRlEnv
@@ -23,11 +22,7 @@ from models import YourRlAction, YourRlObservation
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")
 
-load_dotenv()
-
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-HF_TOKEN = os.getenv("HF_TOKEN")
-API_KEY = HF_TOKEN or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 BENCHMARK = "trade-exec-gym"
 DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_1")
@@ -103,20 +98,13 @@ def build_user_prompt(
 
 
 def _build_llm_client() -> Optional[OpenAI]:
-    # Use injected validator credentials when present.
-    # Keep fallback for local dry-runs only.
-    try:
-        base_url = os.environ["API_BASE_URL"].strip()
-        api_key = (os.environ.get("HF_TOKEN") or os.environ["API_KEY"]).strip()
-    except KeyError:
-        if not API_BASE_URL or not API_KEY:
-            return None
-        base_url = API_BASE_URL.strip()
-        api_key = API_KEY.strip()
+    # Use runtime-injected env vars for proxy calls.
+    base_url = os.environ.get("API_BASE_URL", API_BASE_URL).strip()
+    api_key = (os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or "").strip()
 
     if not base_url or not api_key:
         return None
-    return OpenAI(base_url=base_url, api_key=api_key)
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
 def _ensure_proxy_call(llm_client: Optional[OpenAI]) -> str:
@@ -200,7 +188,7 @@ def run_task(env_url: str) -> None:
     log_start(current_task_id)
 
     if llm_client is None and REQUIRE_LLM_PROXY:
-        err = "missing API_BASE_URL and/or HF_TOKEN/API_KEY for required proxy call"
+        err = "missing API_BASE_URL and/or API_KEY/HF_TOKEN for required proxy call"
         log_step(1, _fallback_command(1), 0.01, True, err)
         log_end(
             success=False,
