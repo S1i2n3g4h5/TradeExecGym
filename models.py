@@ -16,6 +16,8 @@ class TradeObservation(Observation):
     valid_actions: List[str] = Field(default_factory=lambda: ["execute_trade"], description="list of allowed actions")
     done: bool = Field(False, description="Whether the episode is complete")
     info: dict = Field(default_factory=dict, description="Additional debug metadata")
+    task_id: str = Field("task_1", description="ID of the current task")
+    task_description: str = Field("", description="Description of the current task")
 
 class TradeAction(Action):
     """Validated action for one environment step."""
@@ -73,6 +75,18 @@ class YourRlObservation(BaseModel):
     def metadata(self) -> dict:
         """Alias for info used in some monitoring scripts."""
         return self.info
+
+    from pydantic import model_validator
+    @model_validator(mode='before')
+    @classmethod
+    def populate_task_info(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # If the server sent task_id/task_description, scoop them into an actual TaskInfo object
+            tid = data.get("task_id")
+            tdesc = data.get("task_description")
+            if tid and "task" not in data:
+                data["task"] = {"task_id": str(tid), "description": str(tdesc or "")}
+        return data
 
 class YourRlAction(BaseModel):
     """Alias for TradeAction for validator compatibility."""
