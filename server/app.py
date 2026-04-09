@@ -22,6 +22,7 @@ Routes:
 """
 import os
 import sys
+from typing import Any, Dict, List
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
@@ -32,6 +33,45 @@ from server.trade_environment import TradeExecEnvironment
 from models import TradeAction, TradeObservation
 
 GLOBAL_ENV = None
+
+TASKS: List[Dict[str, Any]] = [
+    {
+        "id": "task_1",
+        "name": "TWAP Beater",
+        "difficulty": "easy",
+        "description": (
+            "Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline. "
+            "Exploit intraday volume patterns."
+        ),
+        "max_steps": 30,
+        "grader": {"module": "server.tasks", "function": "grade_task_1"},
+        "has_grader": True,
+    },
+    {
+        "id": "task_2",
+        "name": "VWAP Optimizer",
+        "difficulty": "medium",
+        "description": (
+            "Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve. "
+            "Beat VWAP benchmark."
+        ),
+        "max_steps": 60,
+        "grader": {"module": "server.tasks", "function": "grade_task_2"},
+        "has_grader": True,
+    },
+    {
+        "id": "task_3",
+        "name": "Volatile Execution",
+        "difficulty": "hard",
+        "description": (
+            "Buy 400,000 shares under 3x normal volatility (sigma=0.06). "
+            "Use dark pool routing to bypass lit-venue impact."
+        ),
+        "max_steps": 90,
+        "grader": {"module": "server.tasks", "function": "grade_task_3"},
+        "has_grader": True,
+    },
+]
 
 
 def make_env() -> TradeExecEnvironment:
@@ -66,6 +106,25 @@ def ui_redirect():
         "env_api": "http://localhost:7860",
         "docs": "http://localhost:7860/docs"
     }
+
+
+@app.get("/tasks")
+def get_tasks() -> Dict[str, List[Dict[str, Any]]]:
+    """Expose explicit task+grader metadata for strict dashboard validators."""
+    return {"tasks": TASKS}
+
+
+@app.get("/grader")
+def get_grader(task: str = "task_1") -> Dict[str, Any]:
+    """Return grader metadata for a task id."""
+    for task_def in TASKS:
+        if task_def["id"] == task:
+            return {
+                "task_id": task_def["id"],
+                "grader": task_def["grader"],
+                "has_grader": True,
+            }
+    return {"task_id": task, "grader": None, "has_grader": False}
 
 
 def main():

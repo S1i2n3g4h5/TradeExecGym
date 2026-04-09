@@ -25,7 +25,11 @@ tasks:
   - id: task_1
     name: "TWAP Beater"
     difficulty: easy
-    grader: "grade/task_1"
+    max_steps: 30
+    grader:
+      module: server.tasks
+      function: grade_task_1
+    has_grader: true
     description: >
       Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
       Exploit intraday volume patterns.
@@ -33,7 +37,11 @@ tasks:
   - id: task_2
     name: "VWAP Optimizer"
     difficulty: medium
-    grader: "grade/task_2"
+    max_steps: 60
+    grader:
+      module: server.tasks
+      function: grade_task_2
+    has_grader: true
     description: >
       Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
       Beat VWAP benchmark.
@@ -41,7 +49,11 @@ tasks:
   - id: task_3
     name: "Volatile Execution"
     difficulty: hard
-    grader: "grade/task_3"
+    max_steps: 90
+    grader:
+      module: server.tasks
+      function: grade_task_3
+    has_grader: true
     description: >
       Buy 400,000 shares under 3x normal volatility (sigma=0.06).
       Use dark pool routing to bypass lit-venue impact.
