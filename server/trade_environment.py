@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from openenv.core import Action, Environment, Observation
-from models import TradeAction, TradeObservation, TradeState, TradeReward
+from models import TradeAction, TradeObservation, TradeReward, TradeState
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,22 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"Your IS Performance: {current_is:.1f} bps"
         )
 
+    def execute_trade(
+        self,
+        participation_rate: float = 0.05,
+        use_dark_pool: bool = False,
+        dark_pool_fraction: float = 0.0,
+    ) -> str:
+        """Compatibility helper for legacy tests and scripts."""
+        return self.execute_trade_logic(
+            participation_rate=participation_rate,
+            use_dark_pool=use_dark_pool,
+            dark_pool_fraction=dark_pool_fraction,
+        )
+
+    def get_reward_scalar(self) -> float:
+        """Compatibility helper returning latest scalar reward."""
+        return float(self._last_reward)
 
 
     def grade(self) -> float:
@@ -271,8 +287,15 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         return self._build_observation(reward=self._last_reward, done=self._episode_done)
 
     def _build_observation(self, reward: Optional[float] = None, done: bool = False) -> TradeObservation:
-        """Build a TradeObservation from current state, ensuring metadata is populated."""
-        obs = TradeObservation(
+        """Build a TradeObservation from current state."""
+        numeric_obs = self._build_numeric_observation()
+        metadata = {
+            "task_id": self._task_id,
+            "max_steps": self._max_steps,
+            "total_shares": self._total_shares,
+            "observation": numeric_obs,
+        }
+        return TradeObservation(
             day=0, # SOR is intraday
             step=self._step_count,
             price_norm=self._mid_price / max(0.001, self._arrival_price),
@@ -284,19 +307,9 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             text_summary=self._build_market_state_text(),
             done=done,
             reward=reward,
-            info=self._build_numeric_observation()
+            metadata=metadata,
+            info=numeric_obs,
         )
-        
-        # OpenEnv Spec Compliance: 
-        # test_reset_returns_observation and test_reset_includes_numeric_observation 
-        # expect metadata to contain task_id and the observation dictionary.
-        obs.metadata = {
-            "task_id": self._task_id,
-            "max_steps": self._max_steps,
-            "total_shares": self._total_shares,
-            "observation": self._build_numeric_observation()
-        }
-        return obs
 
 
     @property
@@ -569,7 +582,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"  IS < {ac_is:.1f}  -> beat AC Optimal (Hall of Fame)"
         )
 
-    def execute_trade(
+    def execute_trade_logic(
         self,
         participation_rate: float,
         use_dark_pool: bool = False,
