@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 
-from tasks.factory import get_task
+from server.tasks import get_task
 
 # Average daily volume (shares/day). Used for participation rate → shares.
 ADV_SHARES = 10_000_000
