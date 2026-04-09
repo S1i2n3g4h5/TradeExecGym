@@ -18,109 +18,80 @@ except Exception:
     SEED_CONFIG: Dict[str, Any] = {}
 
 
-@dataclass
-class EpisodeRecord:
-    task_id: int
-    initial_money: float
-    final_money: float
-    storage_value: float
-    total_reward: float
-    days_elapsed: int
-    max_days: int
-    withered_count: int
-    drought_days: int
-    healthy_days: int
-    sell_events: List[Dict[str, Any]] = field(default_factory=list)
-
-
 def _clamp01(x: float) -> float:
     return round(max(0.01, min(0.99, float(x))), 4)
 
 
+@dataclass
+class EpisodeRecord:
+    task_id: int
+    shares_executed: int
+    total_shares: int
+    current_is_bps: float
+    twap_is_bps: float
+    vwap_is_bps: float
+    ac_is_bps: float
+    step_count: int = 0
+    max_steps: int = 1
+    participation_history: List[float] = field(default_factory=list)
+    dark_pool_usage: float = 0.0
+
+
+def _is_quality_score(current_is: float, ac_is: float) -> float:
+    ratio = current_is / max(1.0, ac_is)
+    if ratio <= 1.0:
+        return 1.0
+    return max(0.0, 1.0 - (ratio - 1.0) / 2.0)
+
+
+def _baseline_bonus(current_is: float, twap_is: float, vwap_is: float) -> float:
+    return (0.10 if current_is < twap_is else 0.0) + (0.10 if current_is < vwap_is else 0.0)
+
+
 def _grade_record_task1(record: EpisodeRecord) -> float:
     """
-    Easy task — single crop, stable climate.
-    Perfect score = double your starting money.
+    Easy task — TWAP Beater.
+    Score = 50% IS quality (vs AC), 30% completion, 20% benchmark beating.
     """
-    if record.initial_money <= 0:
-        return 0.01
-
-    net_worth = record.final_money + record.storage_value
-    ratio = net_worth / (record.initial_money * 2.0)
-    score = min(0.99, max(0.01, ratio))
-
-    wither_penalty = min(0.2, record.withered_count * 0.05)
-    score = max(0.01, score - wither_penalty)
-
+    completion = record.shares_executed / max(1, record.total_shares)
+    score = (
+        0.50 * _is_quality_score(record.current_is_bps, record.ac_is_bps)
+        + 0.30 * completion
+        + _baseline_bonus(record.current_is_bps, record.twap_is_bps, record.vwap_is_bps)
+    )
     return _clamp01(score)
 
 
 def _grade_record_task2(record: EpisodeRecord) -> float:
     """
-    Medium task — multi-crop, market timing.
-    Score = 0.6 × profit_score + 0.4 × timing_score
+    Medium task — VWAP Optimizer.
+    Slightly stronger emphasis on VWAP beating.
     """
-    if record.initial_money <= 0:
-        return 0.01
-
-    net_worth = record.final_money + record.storage_value
-    profit_ratio = net_worth / (record.initial_money * 2.5)
-    profit_score = min(0.99, max(0.01, profit_ratio))
-
-    if not record.sell_events:
-        timing_score = 0.01
-    else:
-        good_revenue = 0.0
-        total_revenue = 0.0
-        for event in record.sell_events:
-            revenue = float(event.get("price", 0.0)) * float(event.get("qty", 0.0))
-            base_revenue = float(event.get("base_price", 0.0)) * float(event.get("qty", 0.0))
-            total_revenue += revenue
-            if float(event.get("price", 0.0)) > float(event.get("base_price", 0.0)):
-                good_revenue += revenue - base_revenue
-
-        if total_revenue > 0:
-            timing_score = min(0.99, good_revenue / (total_revenue * 0.3))
-        else:
-            timing_score = 0.01
-
-    wither_penalty = min(0.3, record.withered_count * 0.1)
-    score = (0.6 * profit_score) + (0.4 * timing_score)
-    score = max(0.01, score - wither_penalty)
+    completion = record.shares_executed / max(1, record.total_shares)
+    vwap_edge = 0.15 if record.current_is_bps < record.vwap_is_bps else 0.0
+    twap_edge = 0.05 if record.current_is_bps < record.twap_is_bps else 0.0
+    score = (
+        0.50 * _is_quality_score(record.current_is_bps, record.ac_is_bps)
+        + 0.30 * completion
+        + vwap_edge
+        + twap_edge
+    )
     return _clamp01(score)
 
 
 def _grade_record_task3(record: EpisodeRecord) -> float:
     """
-    Hard task — drought, spoilage, resource pressure.
-    Score = 0.5 × profit_score + 0.3 × survival_score + 0.2 × resilience_score
+    Hard task — Volatile Execution.
+    Adds mild dark-pool usage reward when volatility task conditions apply.
     """
-    if record.initial_money <= 0:
-        return 0.01
-
-    net_worth = record.final_money + record.storage_value
-    profit_ratio = net_worth / (record.initial_money * 3.0)
-    profit_score = min(0.99, max(0.01, profit_ratio))
-
-    if record.final_money > 0 and record.days_elapsed >= record.max_days:
-        survival_score = 0.99
-    elif record.final_money > 0:
-        survival_score = record.days_elapsed / max(1, record.max_days)
-    else:
-        survival_score = 0.01
-
-    if record.max_days > 0:
-        resilience_score = min(0.99, record.healthy_days / record.max_days)
-    else:
-        resilience_score = 0.01
-
-    wither_penalty = min(0.4, record.withered_count * 0.15)
+    completion = record.shares_executed / max(1, record.total_shares)
+    dp_bonus = min(0.05, max(0.0, record.dark_pool_usage))
     score = (
-        0.5 * profit_score
-        + 0.3 * survival_score
-        + 0.2 * resilience_score
+        0.50 * _is_quality_score(record.current_is_bps, record.ac_is_bps)
+        + 0.30 * completion
+        + _baseline_bonus(record.current_is_bps, record.twap_is_bps, record.vwap_is_bps)
+        + dp_bonus
     )
-    score = max(0.01, score - wither_penalty)
     return _clamp01(score)
 
 
@@ -134,7 +105,6 @@ def grade_episode(record: EpisodeRecord) -> float:
         score = _grade_record_task3(record)
     else:
         raise ValueError(f"Unknown task_id: {record.task_id}")
-
     return _clamp01(score)
 
 
@@ -145,7 +115,7 @@ class BaseTradeTask:
         self.max_steps = 30
         self.arrival_price = 150.0
         self.sigma = 0.02
-        self.description = "Base task."
+        self.description = "Base trade execution task."
 
     def reset(self) -> None:
         pass
@@ -169,12 +139,12 @@ class BaseTradeTask:
     ) -> str:
         progress = (step_count / max(1, self.max_steps)) * 100
         return (
-            f"[{self.task_id}] {progress:.0f}% done, {shares_remaining:,} left, "
-            f"IS={current_is:.2f} bps."
+            f"[{self.task_id}] {progress:.0f}% done | "
+            f"{shares_remaining:,} shares left | IS={current_is:.2f} bps."
         )
 
     def get_winning_secret(self) -> str:
-        return "Trade more in high-liquidity windows and protect inventory pace."
+        return "Keep completion pace while minimizing IS vs TWAP/VWAP baselines."
 
     def get_grader_score(
         self,
@@ -186,12 +156,12 @@ class BaseTradeTask:
         ac_is: float = 14.0,
     ) -> float:
         completion = shares_executed / max(1, total_shares)
-        c_score = completion * 0.30
-        is_ratio = current_is / max(1.0, ac_is)
-        is_score = (max(0.0, 1.0 - (is_ratio - 1.0) / 2.0) if is_ratio > 1.0 else 1.0) * 0.50
-        twap_bonus = 0.10 if current_is < twap_is else 0.0
-        vwap_bonus = 0.10 if current_is < vwap_is else 0.0
-        return round(float(min(max(c_score + is_score + twap_bonus + vwap_bonus, 0.0001), 0.9999)), 4)
+        score = (
+            0.50 * _is_quality_score(current_is, ac_is)
+            + 0.30 * completion
+            + _baseline_bonus(current_is, twap_is, vwap_is)
+        )
+        return _clamp01(score)
 
 
 class TaskTwapBeater(BaseTradeTask):
@@ -202,7 +172,7 @@ class TaskTwapBeater(BaseTradeTask):
         self.max_steps = 30
         self.arrival_price = 150.0
         self.sigma = 0.02
-        self.description = "Buy 100K shares in 30 steps. Beat TWAP."
+        self.description = "Buy 100K shares in 30 steps and beat TWAP."
 
 
 class TaskVwapOptimizer(BaseTradeTask):
@@ -213,7 +183,7 @@ class TaskVwapOptimizer(BaseTradeTask):
         self.max_steps = 60
         self.arrival_price = 150.0
         self.sigma = 0.02
-        self.description = "Sell 250K shares in 60 steps with VWAP-aware timing."
+        self.description = "Sell 250K shares in 60 steps and beat VWAP."
 
 
 class TaskVolatileExecution(BaseTradeTask):
@@ -224,7 +194,7 @@ class TaskVolatileExecution(BaseTradeTask):
         self.max_steps = 90
         self.arrival_price = 150.0
         self.sigma = 0.06
-        self.description = "Buy 400K shares under high volatility with dark-pool routing."
+        self.description = "Buy 400K shares under 3x volatility with dark pool usage."
 
 
 class TaskAdversary(BaseTradeTask):
@@ -235,7 +205,7 @@ class TaskAdversary(BaseTradeTask):
         self.max_steps = 120
         self.arrival_price = 150.0
         self.sigma = 0.02
-        self.description = "Sell 600K while an HFT detector penalizes predictable rates."
+        self.description = "Sell 600K shares against pattern-detecting HFT adversary."
         self.participation_history: List[float] = []
         self.leakage_penalty_base = 15.0
         self._episode_seed = 42
@@ -244,7 +214,7 @@ class TaskAdversary(BaseTradeTask):
         self.participation_history = []
 
     @staticmethod
-    def _calc_autocorr(data: List[float]) -> float:
+    def _autocorr(data: List[float]) -> float:
         if len(data) < 3:
             return 0.0
         x = data[:-1]
@@ -267,8 +237,8 @@ class TaskAdversary(BaseTradeTask):
         if len(self.participation_history) < 5:
             return 0.0
         std_dev = statistics.stdev(self.participation_history)
-        lag1_ac = self._calc_autocorr(self.participation_history)
-        if std_dev < 0.005 or abs(lag1_ac) > 0.7:
+        lag1 = self._autocorr(self.participation_history)
+        if std_dev < 0.005 or abs(lag1) > 0.70:
             rng = random.Random(int(self._episode_seed) + int(step_count))
             return self.leakage_penalty_base + rng.uniform(-5.0, 5.0)
         return 0.0
@@ -295,7 +265,7 @@ class TaskDeadlinePressure(BaseTradeTask):
     ) -> float:
         completion = shares_executed / max(1, total_shares)
         if completion < 0.999:
-            return round(float(max(completion * 0.15, 0.0001)), 4)
+            return _clamp01(max(0.0001, completion * 0.15))
         return super().get_grader_score(
             shares_executed=shares_executed,
             total_shares=total_shares,
@@ -339,126 +309,122 @@ def _as_payload(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return payload
 
 
-def _grade_from_payload(task_id: str, *args: Any, **kwargs: Any) -> float:
-    payload = _as_payload(*args, **kwargs)
-    task = get_task(task_id)
-    shares_executed = int(payload.get("shares_executed", payload.get("executed_shares", payload.get("filled_shares", 0))))
-    total_shares = int(payload.get("total_shares", task.total_shares))
-    current_is = float(payload.get("current_is", payload.get("current_is_bps", payload.get("is_bps", 0.0))))
-    twap_is = float(payload.get("twap_is", 25.0))
-    vwap_is = float(payload.get("vwap_is", 20.0))
-    ac_is = float(payload.get("ac_is", 14.0))
-    score = task.get_grader_score(
-        shares_executed=shares_executed,
-        total_shares=total_shares,
-        current_is=current_is,
-        twap_is=twap_is,
-        vwap_is=vwap_is,
-        ac_is=ac_is,
-    )
-    return round(float(min(max(score, 0.0001), 0.9999)), 4)
+def _task_num(task_id_like: Any) -> int:
+    tid = str(task_id_like or "")
+    if tid in {"1", "task_1", "task1_twap_beater"}:
+        return 1
+    if tid in {"2", "task_2", "task2_vwap_optimizer"}:
+        return 2
+    if tid in {"3", "task_3", "task3_volatile_execution"}:
+        return 3
+    return 1
 
 
-def _to_episode_record(task_num: int, payload: Dict[str, Any]) -> EpisodeRecord:
+def _payload_to_record(task_num: int, payload: Dict[str, Any]) -> EpisodeRecord:
     return EpisodeRecord(
         task_id=task_num,
-        initial_money=float(payload.get("initial_money", 100.0)),
-        final_money=float(payload.get("final_money", payload.get("net_worth", 100.0))),
-        storage_value=float(payload.get("storage_value", 0.0)),
-        total_reward=float(payload.get("total_reward", 0.0)),
-        days_elapsed=int(payload.get("days_elapsed", payload.get("step", 0))),
-        max_days=int(payload.get("max_days", payload.get("max_steps", 1))),
-        withered_count=int(payload.get("withered_count", 0)),
-        drought_days=int(payload.get("drought_days", 0)),
-        healthy_days=int(payload.get("healthy_days", 0)),
-        sell_events=list(payload.get("sell_events", [])),
+        shares_executed=int(payload.get("shares_executed", payload.get("executed_shares", payload.get("filled_shares", 0)))),
+        total_shares=int(payload.get("total_shares", 100_000 if task_num == 1 else (250_000 if task_num == 2 else 400_000))),
+        current_is_bps=float(payload.get("current_is", payload.get("current_is_bps", payload.get("is_bps", 0.0)))),
+        twap_is_bps=float(payload.get("twap_is", 25.0)),
+        vwap_is_bps=float(payload.get("vwap_is", 20.0)),
+        ac_is_bps=float(payload.get("ac_is", 14.0)),
+        step_count=int(payload.get("step_count", payload.get("step", 0))),
+        max_steps=int(payload.get("max_steps", 30 if task_num == 1 else (60 if task_num == 2 else 90))),
+        participation_history=list(payload.get("participation_history", [])),
+        dark_pool_usage=float(payload.get("dark_pool_usage", payload.get("dark_pool_fraction", 0.0))),
     )
 
 
-def _generate_task(task_id: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+def task_1(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     payload = _as_payload(*args, **kwargs)
-    out: Dict[str, Any] = {"task_id": task_id}
+    out = {"task_id": "task_1"}
     if payload.get("seed") is not None:
-        try:
-            out["seed"] = int(payload["seed"])
-        except Exception:
-            pass
+        out["seed"] = int(payload["seed"])
+    return out
+
+
+def task_2(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    payload = _as_payload(*args, **kwargs)
+    out = {"task_id": "task_2"}
+    if payload.get("seed") is not None:
+        out["seed"] = int(payload["seed"])
+    return out
+
+
+def task_3(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    payload = _as_payload(*args, **kwargs)
+    out = {"task_id": "task_3"}
+    if payload.get("seed") is not None:
+        out["seed"] = int(payload["seed"])
     return out
 
 
 def generate_task_1(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return _generate_task("task_1", *args, **kwargs)
+    return task_1(*args, **kwargs)
 
 
 def generate_task_2(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return _generate_task("task_2", *args, **kwargs)
+    return task_2(*args, **kwargs)
 
 
 def generate_task_3(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return _generate_task("task_3", *args, **kwargs)
+    return task_3(*args, **kwargs)
 
 
-def task_1(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return generate_task_1(*args, **kwargs)
-
-
-def task_2(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return generate_task_2(*args, **kwargs)
-
-
-def task_3(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    return generate_task_3(*args, **kwargs)
-
-
-def grade_task_1(*args: Any, **kwargs: Any) -> float:
-    return _grade_from_payload("task_1", *args, **kwargs)
-
-
-def grade_task_2(*args: Any, **kwargs: Any) -> float:
-    return _grade_from_payload("task_2", *args, **kwargs)
-
-
-def grade_task_3(*args: Any, **kwargs: Any) -> float:
-    return _grade_from_payload("task_3", *args, **kwargs)
-
-
-def task_grader(*args: Any, **kwargs: Any) -> float:
-    payload = _as_payload(*args, **kwargs)
-    tid = str(payload.get("task_id", payload.get("id", "task_1")))
-    if tid not in {"task_1", "task_2", "task_3"}:
-        tid = "task_1"
-    return _grade_from_payload(tid, payload)
-
-
-def _episode_or_payload(task_num: int, *args: Any, **kwargs: Any) -> EpisodeRecord:
-    if args and isinstance(args[0], EpisodeRecord):
-        return args[0]
-    payload = _as_payload(*args, **kwargs)
-    return _to_episode_record(task_num, payload)
-
-
-# These names match the exact style requested by the user.
 def grade_task1(*args: Any, **kwargs: Any) -> float:
     if args and isinstance(args[0], EpisodeRecord):
         return _grade_record_task1(args[0])
-    return _grade_from_payload("task_1", *args, **kwargs)
+    payload = _as_payload(*args, **kwargs)
+    rec = _payload_to_record(1, payload)
+    return _clamp01(_grade_record_task1(rec))
 
 
 def grade_task2(*args: Any, **kwargs: Any) -> float:
     if args and isinstance(args[0], EpisodeRecord):
         return _grade_record_task2(args[0])
-    return _grade_from_payload("task_2", *args, **kwargs)
+    payload = _as_payload(*args, **kwargs)
+    rec = _payload_to_record(2, payload)
+    return _clamp01(_grade_record_task2(rec))
 
 
 def grade_task3(*args: Any, **kwargs: Any) -> float:
     if args and isinstance(args[0], EpisodeRecord):
         return _grade_record_task3(args[0])
-    return _grade_from_payload("task_3", *args, **kwargs)
+    payload = _as_payload(*args, **kwargs)
+    rec = _payload_to_record(3, payload)
+    return _clamp01(_grade_record_task3(rec))
+
+
+def grade_task_1(*args: Any, **kwargs: Any) -> float:
+    return grade_task1(*args, **kwargs)
+
+
+def grade_task_2(*args: Any, **kwargs: Any) -> float:
+    return grade_task2(*args, **kwargs)
+
+
+def grade_task_3(*args: Any, **kwargs: Any) -> float:
+    return grade_task3(*args, **kwargs)
+
+
+def task_grader(*args: Any, **kwargs: Any) -> float:
+    payload = _as_payload(*args, **kwargs)
+    n = _task_num(payload.get("task_id", payload.get("id", "task_1")))
+    if n == 1:
+        return grade_task1(payload)
+    if n == 2:
+        return grade_task2(payload)
+    return grade_task3(payload)
 
 
 __all__ = [
     "SEED_CONFIG",
     "EpisodeRecord",
+    "grade_task1",
+    "grade_task2",
+    "grade_task3",
+    "grade_episode",
     "BaseTradeTask",
     "TaskTwapBeater",
     "TaskVwapOptimizer",
@@ -466,18 +432,14 @@ __all__ = [
     "TaskAdversary",
     "TaskDeadlinePressure",
     "get_task",
-    "generate_task_1",
-    "generate_task_2",
-    "generate_task_3",
     "task_1",
     "task_2",
     "task_3",
+    "generate_task_1",
+    "generate_task_2",
+    "generate_task_3",
     "grade_task_1",
     "grade_task_2",
     "grade_task_3",
-    "grade_task1",
-    "grade_task2",
-    "grade_task3",
-    "grade_episode",
     "task_grader",
 ]
