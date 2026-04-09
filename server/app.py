@@ -44,7 +44,8 @@ TASKS: List[Dict[str, Any]] = [
             "Exploit intraday volume patterns."
         ),
         "max_steps": 30,
-        "grader": {"module": "server.tasks", "function": "grade_task_1"},
+        "grader": "server.tasks:grade_task_1",
+        "task_grader": "server.tasks:grade_task_1",
         "has_grader": True,
     },
     {
@@ -56,7 +57,8 @@ TASKS: List[Dict[str, Any]] = [
             "Beat VWAP benchmark."
         ),
         "max_steps": 60,
-        "grader": {"module": "server.tasks", "function": "grade_task_2"},
+        "grader": "server.tasks:grade_task_2",
+        "task_grader": "server.tasks:grade_task_2",
         "has_grader": True,
     },
     {
@@ -68,7 +70,8 @@ TASKS: List[Dict[str, Any]] = [
             "Use dark pool routing to bypass lit-venue impact."
         ),
         "max_steps": 90,
-        "grader": {"module": "server.tasks", "function": "grade_task_3"},
+        "grader": "server.tasks:grade_task_3",
+        "task_grader": "server.tasks:grade_task_3",
         "has_grader": True,
     },
 ]
@@ -120,9 +123,9 @@ def ui_redirect():
 
 
 @app.get("/tasks")
-def get_tasks() -> Dict[str, List[Dict[str, Any]]]:
-    """Expose explicit task+grader metadata for strict dashboard validators."""
-    return {"tasks": TASKS}
+def get_tasks() -> List[Dict[str, Any]]:
+    """Expose explicit task+grader metadata as a plain list for validator compatibility."""
+    return TASKS
 
 
 @app.get("/grader")
@@ -133,6 +136,7 @@ def get_grader(task: str = "task_1") -> Dict[str, Any]:
             return {
                 "task_id": task_def["id"],
                 "grader": task_def["grader"],
+                "task_grader": task_def["task_grader"],
                 "has_grader": True,
             }
     return {"task_id": task, "grader": None, "has_grader": False}
