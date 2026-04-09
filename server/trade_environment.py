@@ -360,13 +360,18 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     @property
     def state(self) -> TradeState:
         """Returns the full internal state object."""
+        # price_model is initialized in reset(); fall back safely for pre-reset calls.
+        if self.price_model is not None and getattr(self.price_model, "state", None) is not None:
+            current_price = float(self.price_model.state.price)
+        else:
+            current_price = float(self._mid_price)
         return TradeState(
             episode_id=self._episode_id,
             step_count=self._step_count,
             task_id=self._task_id,
             shares_remaining=self._shares_remaining,
             current_is_bps=self._compute_current_is(),
-            price_norm=self._price_model.current_price / self._arrival_price,
+            price_norm=current_price / max(0.001, self._arrival_price),
             done=self._episode_done,
         )
 
