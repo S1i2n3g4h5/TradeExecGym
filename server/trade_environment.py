@@ -61,10 +61,11 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
     """
     SUPPORTS_CONCURRENT_SESSIONS = False
 
-    def __init__(self) -> None:
+    def __init__(self, task_id: int = 1) -> None:
         # Episode state (initialised here; properly set in reset())
         self._episode_id: str = str(uuid.uuid4())
-        self._task_id: str = "task_1"
+        self.task_id: int = task_id # Match FarmingEnvironment
+        self._task_id: str = f"task_{task_id}"
         self._step_count: int = 0
         self._total_shares: int = 100_000
         self._shares_remaining: int = 100_000
@@ -157,33 +158,27 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         self,
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
-        task_id: Optional[str] = None,
+        task_id: Optional[int | str] = None,
         **kwargs: Any,
     ) -> TradeObservation:
-        """Reset for a new episode.
+        """Reset for a new episode."""
+        if seed is not None:
+             # Ensure reproducibility
+             np.random.seed(seed)
 
-        Args:
-            seed: RNG seed (used for GBM price model).
-            episode_id: Custom episode ID.
-            task_id: One of the task keys defined in ``TASK_CONFIGS``.
-        """
-        tid = task_id or kwargs.get("task_id", "task_1")
-        original_tid = tid
+        if task_id is not None:
+            if str(task_id).startswith("task_"):
+                self.task_id = int(str(task_id).replace("task_", ""))
+            else:
+                try:
+                    self.task_id = int(task_id)
+                except ValueError:
+                    self.task_id = 1
         
-        # Mapping for task_1..task_5 style IDs
-        task_mapping = {
-            "task_1": "task1_twap_beater",
-            "task_2": "task2_vwap_optimizer",
-            "task_3": "task3_volatile_execution",
-            "task_4": "task4_adversarial",
-            "task_5": "task5_deadline_pressure"
-        }
-        mapped_tid = task_mapping.get(tid, tid)
-        
-        self.active_task = get_task(mapped_tid)
+        self._task_id = f"task_{self.task_id}"
+        self.active_task = get_task(self._task_id)
 
         # Reset episode state
-        self._task_id = original_tid # Keep "task_1" etc. as defined in openenv.yaml
         self._total_shares = self.active_task.total_shares
         self._shares_remaining = self._total_shares
         self._shares_executed = 0
@@ -308,6 +303,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             done=done,
             reward=reward,
             metadata=metadata,
+            task_id=self._task_id,
+            task_description=self.active_task.description if self.active_task else "Execute trade efficiently.",
             info=numeric_obs,
         )
 
@@ -897,31 +894,23 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
 
     def _compute_grader_score(self) -> float:
         """Compute the task-specific grader score (0.0 – 1.0) for leaderboard ranking.
-
-        WHY DELEGATE TO THE TASK:
-        Each of the 5 tasks has a fundamentally different success criterion:
-        - Task 1-3: IS quality relative to AC Optimal (the 50/30/20 weighting)
-        - Task 5: Binary completion gate (score = 0.0 unless >=99.9% filled)
-        Centralizing grader logic in `get_grader_score()` on each task object allows
-        per-task winner definitions WITHOUT changing the environment's core step logic.
-
-        THE 50/30/20 WEIGHTING (Tasks 1-4 default in base_task.py):
-        - 50% IS Quality: How close agent IS is to the AC Optimal floor (Economic Mastery)
-        - 30% Inventory Completion: Did the agent actually fill the order? (Execution Fidelity)
-        - 20% Baseline Beating: Did the agent outperform TWAP and VWAP? (Relative Edge)
-        This weighting reflects real-world SOR performance attribution -- IS quality matters
-        most, but an unfilled order is an operational failure regardless of slippage.
+        Uses server.tasks:grade_episode matching the FarmSimulation pattern.
         """
         if self.active_task is None:
             return 0.0001
-
-        raw_score = self.active_task.get_grader_score(
-            shares_executed=self._shares_executed,
-            total_shares=self._total_shares,
-            current_is=self._compute_current_is(),
-            twap_is=self._twap_is_at_step(),
-            vwap_is=self._vwap_is_at_step(),
-            ac_is=self._ac_optimal_is()
+            
+        from server.tasks import EpisodeRecord, grade_episode
+        record = EpisodeRecord(
+            task_id=self.task_id,
+            shares_executed=int(self._shares_executed),
+            total_shares=int(self._total_shares),
+            current_is_bps=float(self._compute_current_is()),
+            twap_is_bps=float(self._twap_is_at_step()),
+            vwap_is_bps=float(self._vwap_is_at_step()),
+            ac_is_bps=float(self._ac_optimal_is()),
+            step_count=self._step_count,
+            max_steps=self._max_steps,
+            participation_history=[], # Optional tracking
+            dark_pool_usage=0.0 # Track if needed
         )
-        # Final environmental safety-net clamp for (0, 1) exclusive compliance
-        return round(float(min(max(raw_score, 0.0001), 0.9999)), 4)
+        return grade_episode(record)
