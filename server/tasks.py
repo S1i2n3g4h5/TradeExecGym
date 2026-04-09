@@ -97,14 +97,28 @@ def _grade_record_task3(record: EpisodeRecord) -> float:
 
 def grade_episode(record: EpisodeRecord) -> float:
     """Route to the correct grader by task_id. Returns float strictly in (0.0, 1.0)."""
-    if record.task_id == 1:
-        score = _grade_record_task1(record)
-    elif record.task_id == 2:
-        score = _grade_record_task2(record)
-    elif record.task_id == 3:
-        score = _grade_record_task3(record)
-    else:
-        raise ValueError(f"Unknown task_id: {record.task_id}")
+    # Defensive mapping: try to use the task-specific grader from the class if possible
+    try:
+        from server.tasks import get_task
+        task_instance = get_task(f"task_{record.task_id}")
+        score = task_instance.get_grader_score(
+            shares_executed=record.shares_executed,
+            total_shares=record.total_shares,
+            current_is=record.current_is_bps,
+            twap_is=record.twap_is_bps,
+            vwap_is=record.vwap_is_bps,
+            ac_is=record.ac_is_bps
+        )
+    except Exception:
+        # Fallback to hardcoded logic for task 1-3
+        if record.task_id == 1:
+            score = _grade_record_task1(record)
+        elif record.task_id == 2:
+            score = _grade_record_task2(record)
+        elif record.task_id == 3:
+            score = _grade_record_task3(record)
+        else:
+            score = 0.0001
     return _clamp01(score)
 
 

@@ -255,7 +255,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
                 except ValueError:
                     self.task_id = 1
         
-        self._task_id = f"task_{self.task_id}"
+        tid = f"task_{self.task_id}"
+        self._task_id = tid
         self.active_task = get_task(self._task_id)
 
         # Reset episode state
