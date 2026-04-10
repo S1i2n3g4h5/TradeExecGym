@@ -44,8 +44,8 @@ TASKS: List[Dict[str, Any]] = [
             "Exploit intraday volume patterns."
         ),
         "max_steps": 30,
-        "grader": "server.tasks:grade_task_1",
-        "task_grader": "server.tasks:grade_task_1",
+        "grader": "grade/task_1",
+        "task_grader": "grade/task_1",
         "has_grader": True,
     },
     {
@@ -57,8 +57,8 @@ TASKS: List[Dict[str, Any]] = [
             "Beat VWAP benchmark."
         ),
         "max_steps": 60,
-        "grader": "server.tasks:grade_task_2",
-        "task_grader": "server.tasks:grade_task_2",
+        "grader": "grade/task_2",
+        "task_grader": "grade/task_2",
         "has_grader": True,
     },
     {
@@ -70,8 +70,8 @@ TASKS: List[Dict[str, Any]] = [
             "Use dark pool routing to bypass lit-venue impact."
         ),
         "max_steps": 90,
-        "grader": "server.tasks:grade_task_3",
-        "task_grader": "server.tasks:grade_task_3",
+        "grader": "grade/task_3",
+        "task_grader": "grade/task_3",
         "has_grader": True,
     },
 ]
@@ -129,6 +129,31 @@ def get_grader(task: str = "task_1") -> Dict[str, Any]:
                 "has_grader": True,
             }
     return {"task_id": task, "grader": None, "has_grader": False}
+
+
+def _clamp_score(score: float) -> float:
+    return max(0.01, min(0.99, float(score)))
+
+
+@app.api_route("/grade/task_1", methods=["GET", "POST"])
+def grade_task_1() -> Dict[str, float]:
+    from server.tasks import grade_task_1 as grader
+    score = _clamp_score(grader())
+    return {"score": score, "reward": score}
+
+
+@app.api_route("/grade/task_2", methods=["GET", "POST"])
+def grade_task_2() -> Dict[str, float]:
+    from server.tasks import grade_task_2 as grader
+    score = _clamp_score(grader())
+    return {"score": score, "reward": score}
+
+
+@app.api_route("/grade/task_3", methods=["GET", "POST"])
+def grade_task_3() -> Dict[str, float]:
+    from server.tasks import grade_task_3 as grader
+    score = _clamp_score(grader())
+    return {"score": score, "reward": score}
 
 
 def main():

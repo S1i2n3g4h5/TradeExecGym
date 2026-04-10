@@ -1,56 +1,19 @@
+spec_version: 1
 name: trade_exec_gym
 version: "1.0.0"
-description: >
-  Smart Order Router RL Environment. Agents execute large block trades while
-  minimizing Implementation Shortfall (IS) using Almgren-Chriss market-impact
-  physics, dark-pool routing, and adversarial HFT pattern detection.
-author: "singh"
-license: MIT
-tags:
-  - openenv
-  - finance
-  - trading
-  - market-microstructure
-  - rl
-
-server:
-  port: 7860
-  path: server/app.py
-  object: app
-
-action_class: TradeAction
-observation_class: TradeObservation
-
+type: space
+runtime: fastapi
+app: inference:app
+port: 7860
 tasks:
   - id: task_1
-    name: "TWAP Beater"
     difficulty: easy
-    max_steps: 30
-    grader: "server.tasks:grade_task_1"
-    task_grader: "server.tasks:grade_task_1"
-    has_grader: true
-    description: >
-      Buy 100,000 shares in 30 steps. Beat TWAP (equal-slice) baseline.
-      Exploit intraday volume patterns.
+    grader: grade/task_1
 
   - id: task_2
-    name: "VWAP Optimizer"
     difficulty: medium
-    max_steps: 60
-    grader: "server.tasks:grade_task_2"
-    task_grader: "server.tasks:grade_task_2"
-    has_grader: true
-    description: >
-      Sell 250,000 shares in 60 steps tracking the U-shaped intraday volume curve.
-      Beat VWAP benchmark.
+    grader: grade/task_2
 
   - id: task_3
-    name: "Volatile Execution"
     difficulty: hard
-    max_steps: 90
-    grader: "server.tasks:grade_task_3"
-    task_grader: "server.tasks:grade_task_3"
-    has_grader: true
-    description: >
-      Buy 400,000 shares under 3x normal volatility (sigma=0.06).
-      Use dark pool routing to bypass lit-venue impact.
+    grader: grade/task_3

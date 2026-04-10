@@ -18,6 +18,7 @@ from openai import OpenAI
 
 from client import YourRlEnv
 from models import YourRlAction, YourRlObservation
+from server.app import app as env_app
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")
@@ -28,8 +29,36 @@ BENCHMARK = "trade-exec-gym"
 DEFAULT_TASK_ID = os.getenv("TASK_ID", "task_1")
 MAX_STEPS = int(os.getenv("MAX_STEPS", "40"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
-DEFAULT_SPACE_URL = "https://singhsa-tradeexecgym.hf.space"
+DEFAULT_SPACE_URL = "https://singhhsa-tradeexecgym.hf.space"
 REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
+
+# Reuse the OpenEnv FastAPI application so inference:app exposes /reset, /step,
+# /health, etc. We then add grade endpoints on top of the same app object.
+app = env_app
+
+
+@app.api_route("/grade/task_1", methods=["GET", "POST"])
+def grade_task_1():
+    from server.tasks import grade_task_1 as grader
+
+    score = max(0.01, min(0.99, grader()))
+    return {"score": score, "reward": score}
+
+
+@app.api_route("/grade/task_2", methods=["GET", "POST"])
+def grade_task_2():
+    from server.tasks import grade_task_2 as grader
+
+    score = max(0.01, min(0.99, grader()))
+    return {"score": score, "reward": score}
+
+
+@app.api_route("/grade/task_3", methods=["GET", "POST"])
+def grade_task_3():
+    from server.tasks import grade_task_3 as grader
+
+    score = max(0.01, min(0.99, grader()))
+    return {"score": score, "reward": score}
 
 
 def _clamp_rate(rate: float) -> float:

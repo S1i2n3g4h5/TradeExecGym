@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-07T12:45:39.033141+00:00",
+  "timestamp": "2026-04-10T07:22:40.575377+00:00",
   "version": "1.0.0",
   "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
   "layer0_environment_boot": {
@@ -14,11 +14,11 @@
     "status": "PASS"
   },
   "layer1_unit_tests": {
-    "passed": 0,
+    "passed": 65,
     "failed": 0,
     "errors": 0,
     "status": "PASS",
-    "stdout_tail": "You seem to already have a custom sys.excepthook handler installed. I'll skip installing Trio's custom handler, but this means MultiErrors will not show full tracebacks.\n    warnings.warn(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================== 65 passed, 1 warning in 5.63s ========================\nC:\\Users\\singh\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\pytest_asyncio\\plugin.py:247: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0\nrootdir: /mnt/d/SST_x_MetaHugginFace__HACKATHON/trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 65 items\n\ntests/test_adversary_advanced.py .....                                   [  7%]\ntests/test_edge_cases.py ..........                                      [ 23%]\ntests/test_openenv_validate.py .............                             [ 43%]\ntests/test_physics.py ......                                             [ 52%]\ntests/test_reward.py .....                                               [ 60%]\ntests/test_tasks.py .....................                                [ 92%]\ntests/test_venue_router.py .....                                         [100%]\n\n============================== 65 passed in 9.35s ==============================\n"
   },
   "layer2_baseline_scores": {
     "scores": {
@@ -71,8 +71,8 @@
     "status": "PASS"
   },
   "performance_profiling": {
-    "reset_time_ms": 1.06,
-    "avg_step_time_ms": 0.034,
+    "reset_time_ms": 1.68,
+    "avg_step_time_ms": 0.016,
     "reset_threshold_ms": 200.0,
     "step_threshold_ms": 10.0,
     "reset_pass": true,
@@ -88,9 +88,18 @@
     "status": "PASS"
   },
   "layer4_openenv_compliance": {
-    "status": "SKIPPED",
-    "note": "Run with --full to include Layer 4 API compliance (server required)."
+    "endpoints": {
+      "/health": true,
+      "/reset": true,
+      "/step": true,
+      "/state": true,
+      "/schema": true,
+      "/mcp": true
+    },
+    "core_endpoints_ok": true,
+    "endpoints_passing": "6/6",
+    "status": "PASS"
   },
   "overall": "PASS [OK]",
-  "layers_passed": "5/5"
+  "layers_passed": "6/6"
 }
