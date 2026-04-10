@@ -18,7 +18,7 @@ from openai import OpenAI
 
 from client import YourRlEnv
 from models import YourRlAction, YourRlObservation
-from server.app import app as env_app
+from server.app import app as env_app, build_grade_payload
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")
@@ -31,6 +31,7 @@ MAX_STEPS = int(os.getenv("MAX_STEPS", "40"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
 DEFAULT_SPACE_URL = "https://singhhsa-tradeexecgym.hf.space"
 REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
+TASKS = ["task_1", "task_2", "task_3"]
 
 # Reuse the OpenEnv FastAPI application so inference:app exposes /reset, /step,
 # /health, etc. We then add grade endpoints on top of the same app object.
@@ -38,24 +39,15 @@ app = env_app
 
 
 def _grade_task_1():
-    from server.tasks import grade_task_1 as grader
-
-    score = max(0.01, min(0.99, grader()))
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_1")
 
 
 def _grade_task_2():
-    from server.tasks import grade_task_2 as grader
-
-    score = max(0.01, min(0.99, grader()))
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_2")
 
 
 def _grade_task_3():
-    from server.tasks import grade_task_3 as grader
-
-    score = max(0.01, min(0.99, grader()))
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_3")
 
 
 def _route_exists(path: str, method: str) -> bool:
@@ -212,6 +204,23 @@ def _one_line(text: str) -> str:
     return " ".join((text or "").split())
 
 
+def _resolve_task_step_limit(obs: Optional[YourRlObservation]) -> int:
+    """Use task-specific max_steps when no explicit MAX_STEPS override is set."""
+    if os.getenv("MAX_STEPS") is not None or obs is None:
+        return MAX_STEPS
+
+    candidates = [
+        getattr(obs, "max_steps", None),
+        (obs.info or {}).get("max_steps") if getattr(obs, "info", None) else None,
+    ]
+    for candidate in candidates:
+        try:
+            return max(1, int(candidate))
+        except (TypeError, ValueError):
+            continue
+    return MAX_STEPS
+
+
 def log_start(task: str) -> None:
     print(f"[START] task={task} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
@@ -264,9 +273,9 @@ def get_model_command(
         return _fallback_command(step), f"llm_error={type(exc).__name__}: {exc}"
 
 
-def run_task(env_url: str) -> None:
+def run_task(env_url: str, task_id: Optional[str] = None) -> None:
     llm_client = _build_llm_client()
-    current_task_id = DEFAULT_TASK_ID
+    current_task_id = task_id or DEFAULT_TASK_ID
     log_start(current_task_id)
 
     if llm_client is None and REQUIRE_LLM_PROXY:
@@ -278,11 +287,12 @@ def run_task(env_url: str) -> None:
             score=0.01,
             rewards=[0.01],
         )
-        raise SystemExit(1)
+        return
 
     rewards: List[float] = []
     history: List[str] = []
     steps = 0
+    task_step_limit = MAX_STEPS
     task_achieved = False
     obs: Optional[YourRlObservation] = None
     last_output = ""
@@ -295,7 +305,7 @@ def run_task(env_url: str) -> None:
     try:
         with YourRlEnv(base_url=env_url).sync() as env:
             try:
-                result = env.reset(task_id=DEFAULT_TASK_ID, seed=42)
+                result = env.reset(task_id=current_task_id, seed=42)
                 obs = result.observation
                 last_output = obs.command_output or ""
             except Exception as exc:
@@ -305,8 +315,9 @@ def run_task(env_url: str) -> None:
                 return
 
             current_task_id = obs.task.task_id if obs and obs.task else current_task_id
+            task_step_limit = _resolve_task_step_limit(obs)
 
-            for step in range(1, MAX_STEPS + 1):
+            for step in range(1, task_step_limit + 1):
                 steps = step
                 task_description = (
                     obs.task.description if obs and obs.task else "Execute trade efficiently."
@@ -388,4 +399,11 @@ if __name__ == "__main__":
         or os.getenv("HF_SPACE_URL")
         or DEFAULT_SPACE_URL
     )
-    run_task(env_url)
+    for task_id in TASKS:
+        try:
+            run_task(env_url, task_id=task_id)
+        except Exception:
+            # Last-resort guardrail: keep stdout parseable even if something escaped run_task().
+            log_start(task_id)
+            log_step(1, _fallback_command(1), 0.01, True, "unhandled_exception")
+            log_end(success=False, steps=1, score=0.01, rewards=[0.01])

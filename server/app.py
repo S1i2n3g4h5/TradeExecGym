@@ -84,6 +84,18 @@ def make_env() -> TradeExecEnvironment:
         GLOBAL_ENV = TradeExecEnvironment()
     return GLOBAL_ENV
 
+
+def build_grade_payload(task_id: str) -> Dict[str, float]:
+    """Return a live grader payload for the active singleton environment."""
+    env = make_env()
+
+    if env.active_task is not None and getattr(env, "_task_id", None) == task_id:
+        score = _clamp_score(env._compute_grader_score())
+    else:
+        score = 0.01
+
+    return {"score": score, "reward": score}
+
 # ── Core FastAPI app (OpenEnv routes) ────────────────────────────────────────
 # LEAN: no Gradio, no PyTorch at startup. /reset and /health respond instantly.
 app = create_app(
@@ -136,21 +148,15 @@ def _clamp_score(score: float) -> float:
 
 
 def _grade_task_1_payload() -> Dict[str, float]:
-    from server.tasks import grade_task_1 as grader
-    score = _clamp_score(grader())
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_1")
 
 
 def _grade_task_2_payload() -> Dict[str, float]:
-    from server.tasks import grade_task_2 as grader
-    score = _clamp_score(grader())
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_2")
 
 
 def _grade_task_3_payload() -> Dict[str, float]:
-    from server.tasks import grade_task_3 as grader
-    score = _clamp_score(grader())
-    return {"score": score, "reward": score}
+    return build_grade_payload("task_3")
 
 
 @app.get("/grade/task_1", operation_id="grade_task_1_get")

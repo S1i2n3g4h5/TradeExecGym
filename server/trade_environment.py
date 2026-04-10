@@ -248,24 +248,16 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         return self._build_observation(reward=None, done=self._episode_done)
 
     def get_metadata(self) -> Dict[str, Any]:
-        """Return environment metadata plus task/grader runtime state."""
+        """Return OpenEnv EnvironmentMetadata fields only (extra keys are rejected)."""
         return {
             "name": "trade_exec_gym",
             "description": (
-                "Smart Order Router RL environment for minimizing "
-                "implementation shortfall under microstructure constraints."
+                "Smart Order Router RL environment for minimizing implementation "
+                "shortfall under microstructure constraints."
             ),
             "version": "1.0.0",
             "author": "singh",
-            "documentation_url": "https://huggingface.co",
-            "episode_id": self._episode_id,
-            "task_id": self._task_id,
-            "task_number": self.task_id,
-            "max_steps": self._max_steps,
-            "total_shares": self._total_shares,
-            "done": self._episode_done,
-            "last_grade": max(0.01, min(0.99, float(self._last_grade))),
-            "available_tasks": [1, 2, 3],
+            "documentation_url": "https://huggingface.co/spaces/SinghHSA/TradeExecGym",
         }
 
     # ── OpenEnv API ─────────────────────────────────────────────────────────
@@ -402,7 +394,7 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             "grade": grade_value,
             "last_grade": grade_value,
             "has_grader": True,
-            "grader": f"grade_task_{self.task_id}",
+            "grader": f"grade/task_{self.task_id}",
             "available_tasks": [1, 2, 3],
         }
         metadata = dict(runtime_task_info)
