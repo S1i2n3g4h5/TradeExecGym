@@ -37,28 +37,81 @@ REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
 app = env_app
 
 
-@app.api_route("/grade/task_1", methods=["GET", "POST"])
-def grade_task_1():
+def _grade_task_1():
     from server.tasks import grade_task_1 as grader
 
     score = max(0.01, min(0.99, grader()))
     return {"score": score, "reward": score}
 
 
-@app.api_route("/grade/task_2", methods=["GET", "POST"])
-def grade_task_2():
+def _grade_task_2():
     from server.tasks import grade_task_2 as grader
 
     score = max(0.01, min(0.99, grader()))
     return {"score": score, "reward": score}
 
 
-@app.api_route("/grade/task_3", methods=["GET", "POST"])
-def grade_task_3():
+def _grade_task_3():
     from server.tasks import grade_task_3 as grader
 
     score = max(0.01, min(0.99, grader()))
     return {"score": score, "reward": score}
+
+
+def _route_exists(path: str, method: str) -> bool:
+    m = method.upper()
+    for route in app.routes:
+        route_path = getattr(route, "path", None)
+        route_methods = getattr(route, "methods", set()) or set()
+        if route_path == path and m in route_methods:
+            return True
+    return False
+
+
+if not _route_exists("/grade/task_1", "GET"):
+    app.add_api_route(
+        "/grade/task_1",
+        _grade_task_1,
+        methods=["GET"],
+        operation_id="grade_task_1_get",
+    )
+if not _route_exists("/grade/task_1", "POST"):
+    app.add_api_route(
+        "/grade/task_1",
+        _grade_task_1,
+        methods=["POST"],
+        operation_id="grade_task_1_post",
+    )
+
+if not _route_exists("/grade/task_2", "GET"):
+    app.add_api_route(
+        "/grade/task_2",
+        _grade_task_2,
+        methods=["GET"],
+        operation_id="grade_task_2_get",
+    )
+if not _route_exists("/grade/task_2", "POST"):
+    app.add_api_route(
+        "/grade/task_2",
+        _grade_task_2,
+        methods=["POST"],
+        operation_id="grade_task_2_post",
+    )
+
+if not _route_exists("/grade/task_3", "GET"):
+    app.add_api_route(
+        "/grade/task_3",
+        _grade_task_3,
+        methods=["GET"],
+        operation_id="grade_task_3_get",
+    )
+if not _route_exists("/grade/task_3", "POST"):
+    app.add_api_route(
+        "/grade/task_3",
+        _grade_task_3,
+        methods=["POST"],
+        operation_id="grade_task_3_post",
+    )
 
 
 def _clamp_rate(rate: float) -> float:

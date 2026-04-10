@@ -135,25 +135,52 @@ def _clamp_score(score: float) -> float:
     return max(0.01, min(0.99, float(score)))
 
 
-@app.api_route("/grade/task_1", methods=["GET", "POST"])
-def grade_task_1() -> Dict[str, float]:
+def _grade_task_1_payload() -> Dict[str, float]:
     from server.tasks import grade_task_1 as grader
     score = _clamp_score(grader())
     return {"score": score, "reward": score}
 
 
-@app.api_route("/grade/task_2", methods=["GET", "POST"])
-def grade_task_2() -> Dict[str, float]:
+def _grade_task_2_payload() -> Dict[str, float]:
     from server.tasks import grade_task_2 as grader
     score = _clamp_score(grader())
     return {"score": score, "reward": score}
 
 
-@app.api_route("/grade/task_3", methods=["GET", "POST"])
-def grade_task_3() -> Dict[str, float]:
+def _grade_task_3_payload() -> Dict[str, float]:
     from server.tasks import grade_task_3 as grader
     score = _clamp_score(grader())
     return {"score": score, "reward": score}
+
+
+@app.get("/grade/task_1", operation_id="grade_task_1_get")
+def grade_task_1_get() -> Dict[str, float]:
+    return _grade_task_1_payload()
+
+
+@app.post("/grade/task_1", operation_id="grade_task_1_post")
+def grade_task_1_post() -> Dict[str, float]:
+    return _grade_task_1_payload()
+
+
+@app.get("/grade/task_2", operation_id="grade_task_2_get")
+def grade_task_2_get() -> Dict[str, float]:
+    return _grade_task_2_payload()
+
+
+@app.post("/grade/task_2", operation_id="grade_task_2_post")
+def grade_task_2_post() -> Dict[str, float]:
+    return _grade_task_2_payload()
+
+
+@app.get("/grade/task_3", operation_id="grade_task_3_get")
+def grade_task_3_get() -> Dict[str, float]:
+    return _grade_task_3_payload()
+
+
+@app.post("/grade/task_3", operation_id="grade_task_3_post")
+def grade_task_3_post() -> Dict[str, float]:
+    return _grade_task_3_payload()
 
 
 def main():
