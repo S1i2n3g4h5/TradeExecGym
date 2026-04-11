@@ -225,23 +225,22 @@ class UIState:
                         if len(parts) > 1:
                             val = parts[1].split()[0].replace(",", "").strip()
                             metrics["price"] = float(val)
-                    elif "Executed:" in line and "%" in line:
-                        if "(" in line and "%" in line:
-                            val = line.split("(")[1].split("%")[0].strip()
-                            metrics["pct_done"] = float(val)
-                    elif "Your IS:" in line:
+                    if "Executed:" in line and "%" in line:
+                        val = line.split("Executed:")[1].split("%")[0].strip()
+                        metrics["pct_done"] = float(val)
+                    if "Your IS:" in line:
                         raw = line.split("Your IS:")[1].strip()
                         val = raw.lower().replace("bps", "").strip().split()[0]
                         metrics["is_bps"] = float(val)
-                    elif "Final IS:" in line:
+                    if "Final IS:" in line:
                         raw = line.split("Final IS:")[1].strip()
                         val = raw.lower().replace("bps", "").strip().split()[0]
                         metrics["is_bps"] = float(val)
-                    elif "Grader Score:" in line:
+                    if "Grader Score:" in line:
                         raw = line.split("Grader Score:")[1].strip()
                         val = raw.split("/")[0].strip()
                         metrics["score"] = float(val)
-                    elif "Time left:" in line:
+                    if "Time left:" in line:
                         raw = line.split("Time left:")[1].strip()
                         val = raw.split("steps")[0].strip()
                         metrics["steps_left"] = int(val)

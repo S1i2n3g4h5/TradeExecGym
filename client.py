@@ -61,7 +61,9 @@ class TradeExecClient:
             "dark_pool_fraction": float(dark_pool_fraction)
         }
         obs = await self.step(action)
-        return obs.get("info", {}).get("output", "Trade executed.")
+        summary = obs.get("text_summary", "")
+        output = obs.get("output") or obs.get("info", {}).get("output", "")
+        return f"{summary}\n\n{output}".strip()
 
     async def get_market_state(self) -> str:
         """Fetch human-readable market narrative."""
