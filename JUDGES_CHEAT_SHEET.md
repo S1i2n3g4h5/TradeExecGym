@@ -25,5 +25,8 @@ The environment is alive. It procedurally transitions through:
 ## 6. Rigorous Robustness Validation
 We include a **5-Layer Robustness Gauntlet** that mathematically proves the reward signal is sane. It verifies that a random agent *cannot* beat a TWAP agent, and a TWAP agent *cannot* beat an AC-Optimal agent. The skill gradient is monotonic and scientifically verified.
 
+## 7. Unified SOR Architecture
+We have solved the common "port conflict" problem in Hugging Face Spaces by mounting the Gradio UI directly onto the FastAPI server. This provides a unified entry point at port 7860 where the API is instant (<10ms) and the UI is beautiful.
+
 ---
 **TradeExecGym: Real Physics. Real Finance. Real Intelligence.**
