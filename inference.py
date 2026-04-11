@@ -4,15 +4,17 @@ This script is validator-friendly:
 - Uses injected API_BASE_URL + HF_TOKEN/API_KEY for LLM proxy calls when available.
 - Falls back to a deterministic policy when proxy config is missing/unavailable.
 - Never crashes on transient model/network/environment errors.
+- Phase 0 upgrade: Chain-of-thought JSON actions, multi-turn history, structured reasoning.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import textwrap
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
@@ -31,7 +33,7 @@ MAX_STEPS = int(os.getenv("MAX_STEPS", "40"))
 DEFAULT_RATE = float(os.getenv("DEFAULT_PARTICIPATION_RATE", "0.05"))
 DEFAULT_SPACE_URL = "https://singhhsa-tradeexecgym.hf.space"
 REQUIRE_LLM_PROXY = os.getenv("REQUIRE_LLM_PROXY", "1") == "1"
-TASKS = ["task_1", "task_2", "task_3"]
+TASKS = ["task_1", "task_2", "task_3", "task_4", "task_5"]
 
 # Reuse the OpenEnv FastAPI application so inference:app exposes /reset, /step,
 # /health, etc. We then add grade endpoints on top of the same app object.
@@ -138,9 +140,26 @@ def _fallback_command(step: int) -> str:
 
 SYSTEM_PROMPT = textwrap.dedent(
     """
-    You are an institutional trading agent.
-    Return a participation rate as a decimal in [0.01, 0.25].
-    Format: trade rate: 0.XX
+    You are an elite institutional trading agent managing a large block order execution.
+    Your mission: minimize Implementation Shortfall (IS) vs TWAP/VWAP/Almgren-Chriss benchmarks.
+
+    DECISION PROTOCOL — follow these steps:
+    1. READ the INVENTORY section: how much is done, how much time is left.
+    2. CHECK PERFORMANCE: is your IS better or worse than TWAP? Than VWAP?
+    3. DETECT ADVERSARY: look for 'ADVERSARY', 'DETECTED', or penalty warnings.
+    4. ASSESS REGIME: 'FLASH CRASH', 'MOMENTUM', 'LIQUIDITY CRISIS' change your strategy.
+    5. DECIDE and output EXACTLY this JSON (no extra text, no markdown):
+
+    {"strategy": "AGGRESSIVE|PASSIVE|DARK|RANDOMIZE|HOLD", "participation_rate": 0.XX, "dark_pool_fraction": 0.0, "reasoning": "one sentence"}
+
+    STRATEGY GUIDE:
+    - AGGRESSIVE [0.12-0.20]: Behind schedule, time running short — accelerate now.
+    - PASSIVE    [0.02-0.08]: Beating IS benchmarks, time available — minimize impact.
+    - DARK       [0.05-0.12, dark_fraction=0.3-0.4]: Volatile market or large order — hide in dark pool.
+    - RANDOMIZE  [vary ±30%]: HFT adversary DETECTED — break the pattern immediately.
+    - HOLD       [0.01]:      Episode already complete. No more trades needed.
+
+    CRITICAL: An unexecuted mandate at deadline = catastrophic penalty. Never idle when behind pace.
     """
 ).strip()
 
@@ -153,20 +172,24 @@ def build_user_prompt(
     last_reward: float,
     history: List[str],
 ) -> str:
-    history_block = "\n".join(history[-6:]) if history else "None"
+    # Include last 3 step decisions as context for multi-turn reasoning
+    history_block = "\n".join(history[-3:]) if history else "None yet — this is your first step."
+    # Trim market state to avoid token overflow while keeping key sections
+    output_trimmed = (last_output or "")[:1200]
     return textwrap.dedent(
         f"""
         TASK: {task_description}
 
-        Step: {step}
-        Last command output: {last_output!r}
-        Last error: {last_error!r}
-        Last reward: {last_reward:.4f}
+        MARKET STATE (Step {step}):
+        {output_trimmed}
 
-        Previous steps:
+        Last reward: {last_reward:.4f}
+        Last error: {last_error!r}
+
+        YOUR LAST 3 DECISIONS:
         {history_block}
 
-        Send your next command.
+        Output your JSON decision now.
         """
     ).strip()
 
@@ -225,20 +248,66 @@ def log_start(task: str) -> None:
     print(f"[START] task={task} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
 
-def log_step(step: int, action: str, reward: float, done: bool, error: str = "") -> None:
+def log_step(
+    step: int,
+    action: str,
+    reward: float,
+    done: bool,
+    error: str = "",
+    reasoning: str = "",
+) -> None:
     done_str = "true" if done else "false"
     error_str = _one_line(error) if error else "null"
     action_str = _one_line(action)
-    print(
-        f"[STEP] step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}",
-        flush=True,
-    )
+    # Include CoT reasoning in log for judge visibility (truncated to 80 chars)
+    reasoning_str = _one_line(reasoning)[:80] if reasoning else ""
+    log_line = f"[STEP] step={step} action={action_str} reward={reward:.2f} done={done_str} error={error_str}"
+    if reasoning_str:
+        log_line += f" reasoning={reasoning_str}"
+    print(log_line, flush=True)
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     success_str = "true" if success else "false"
     rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.01"
     print(f"[END] success={success_str} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+
+
+def _parse_json_action(text: str) -> Optional[Dict]:
+    """Try to extract a JSON action dict from model output.
+
+    Handles cases where the model wraps JSON in markdown code blocks.
+    Returns None if no valid JSON with 'participation_rate' key is found.
+    """
+    # 1. Try direct parse
+    try:
+        data = json.loads(text)
+        if "participation_rate" in data:
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 2. Try extracting JSON from markdown code block ```json ... ```
+    block_match = re.search(r"```(?:json)?\s*({.*?})\s*```", text, re.DOTALL)
+    if block_match:
+        try:
+            data = json.loads(block_match.group(1))
+            if "participation_rate" in data:
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 3. Try finding a bare JSON object anywhere in the text
+    obj_match = re.search(r"({[^{}]*participation_rate[^{}]*})", text, re.DOTALL)
+    if obj_match:
+        try:
+            data = json.loads(obj_match.group(1))
+            if "participation_rate" in data:
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return None
 
 
 def get_model_command(
@@ -249,9 +318,15 @@ def get_model_command(
     last_error: str,
     last_reward: float,
     history: List[str],
-) -> Tuple[str, str]:
+) -> Tuple[str, float, float, str]:
+    """Get the model's action decision.
+
+    Returns:
+        (raw_command_text, participation_rate, dark_pool_fraction, reasoning)
+    """
     if llm_client is None:
-        return _fallback_command(step), ""
+        rate = _fallback_rate(step)
+        return _fallback_command(step), rate, 0.0, ""
 
     user_prompt = build_user_prompt(
         task_description, step, last_output, last_error, last_reward, history
@@ -263,14 +338,29 @@ def get_model_command(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=120,
+            max_tokens=300,
         )
         text = (completion.choices[0].message.content or "").strip()
         if not text:
-            return _fallback_command(step), "empty model response"
-        return text, ""
+            rate = _fallback_rate(step)
+            return _fallback_command(step), rate, 0.0, "empty_model_response"
+
+        # Try structured JSON parse first
+        parsed = _parse_json_action(text)
+        if parsed is not None:
+            rate = _clamp_rate(float(parsed.get("participation_rate", _fallback_rate(step))))
+            dark_frac = float(parsed.get("dark_pool_fraction", 0.0))
+            dark_frac = max(0.0, min(1.0, dark_frac))
+            reasoning = str(parsed.get("reasoning", ""))[:120]
+            return text, rate, dark_frac, reasoning
+
+        # Fallback: extract rate from legacy "trade rate: 0.XX" format
+        rate = _extract_rate(text, fallback=_fallback_rate(step))
+        return text, rate, 0.0, ""
+
     except Exception as exc:
-        return _fallback_command(step), f"llm_error={type(exc).__name__}: {exc}"
+        rate = _fallback_rate(step)
+        return _fallback_command(step), rate, 0.0, f"llm_error={type(exc).__name__}"
 
 
 def run_task(env_url: str, task_id: Optional[str] = None) -> None:
@@ -322,7 +412,8 @@ def run_task(env_url: str, task_id: Optional[str] = None) -> None:
                 task_description = (
                     obs.task.description if obs and obs.task else "Execute trade efficiently."
                 )
-                command, model_error = get_model_command(
+                # Phase 0: get_model_command now returns (command, rate, dark_frac, reasoning)
+                command, p_rate, dark_frac, reasoning = get_model_command(
                     llm_client,
                     task_description,
                     step,
@@ -331,11 +422,15 @@ def run_task(env_url: str, task_id: Optional[str] = None) -> None:
                     last_reward,
                     history,
                 )
-                p_rate = _extract_rate(command, fallback=_fallback_rate(step))
+                # model_error is now embedded in reasoning when set
+                model_error = reasoning if reasoning.startswith("llm_error=") else ""
 
                 try:
                     result = env.step(
-                        YourRlAction(command=command, participation_rate=p_rate)
+                        YourRlAction(
+                            command=command,
+                            participation_rate=p_rate,
+                        )
                     )
                     obs = result.observation
                     done = bool(result.done)
@@ -361,10 +456,14 @@ def run_task(env_url: str, task_id: Optional[str] = None) -> None:
                 last_reward = reward
                 task_achieved = bool(obs.task_achieved) if obs else False
 
-                history.append(f"Step {step}: rate={p_rate:.3f} reward={reward:.2f}")
+                # Store reasoning in history for multi-turn context
+                history_entry = f"Step {step}: rate={p_rate:.3f} reward={reward:.2f}"
+                if reasoning and not reasoning.startswith("llm_error="):
+                    history_entry += f" | {reasoning[:60]}"
+                history.append(history_entry)
                 rewards.append(reward)
 
-                log_step(step, command, reward, done, last_error)
+                log_step(step, command, reward, done, last_error, reasoning)
 
                 if task_achieved or done:
                     break

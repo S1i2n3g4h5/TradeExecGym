@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-10T15:01:43.664886+00:00",
+  "timestamp": "2026-04-11T12:34:58.380369+00:00",
   "version": "1.0.0",
   "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
   "layer0_environment_boot": {
@@ -14,11 +14,11 @@
     "status": "PASS"
   },
   "layer1_unit_tests": {
-    "passed": 67,
+    "passed": 68,
     "failed": 0,
     "errors": 0,
     "status": "PASS",
-    "stdout_tail": "============================= test session starts =============================\nplatform win32 -- Python 3.11.12, pytest-9.0.2, pluggy-1.6.0\nrootdir: D:\\SST_x_MetaHugginFace__HACKATHON\\trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 67 items\n\ntests\\test_adversary_advanced.py .....                                   [  7%]\ntests\\test_edge_cases.py ..........                                      [ 22%]\ntests\\test_openenv_validate.py .............                             [ 41%]\ntests\\test_physics.py ......                                             [ 50%]\ntests\\test_reward.py .....                                               [ 58%]\ntests\\test_submission_runtime.py ..                                      [ 61%]\ntests\\test_tasks.py .....................                                [ 92%]\ntests\\test_venue_router.py .....                                         [100%]\n\n============================= 67 passed in 12.55s =============================\n"
+    "stdout_tail": "============================= test session starts =============================\nplatform win32 -- Python 3.11.12, pytest-9.0.2, pluggy-1.6.0\nrootdir: D:\\SST_x_MetaHugginFace__HACKATHON\\trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 68 items\n\ntests\\test_adversary_advanced.py .....                                   [  7%]\ntests\\test_edge_cases.py ..........                                      [ 22%]\ntests\\test_openenv_validate.py .............                             [ 41%]\ntests\\test_physics.py ......                                             [ 50%]\ntests\\test_reward.py .....                                               [ 57%]\ntests\\test_submission_runtime.py ...                                     [ 61%]\ntests\\test_tasks.py .....................                                [ 92%]\ntests\\test_venue_router.py .....                                         [100%]\n\n============================= 68 passed in 7.62s ==============================\n"
   },
   "layer2_baseline_scores": {
     "scores": {
@@ -71,8 +71,8 @@
     "status": "PASS"
   },
   "performance_profiling": {
-    "reset_time_ms": 0.8,
-    "avg_step_time_ms": 0.009,
+    "reset_time_ms": 0.98,
+    "avg_step_time_ms": 0.008,
     "reset_threshold_ms": 200.0,
     "step_threshold_ms": 10.0,
     "reset_pass": true,
@@ -89,17 +89,17 @@
   },
   "layer4_openenv_compliance": {
     "endpoints": {
-      "/health": true,
-      "/reset": true,
-      "/step": true,
-      "/state": true,
-      "/schema": true,
-      "/mcp": true
+      "/health": false,
+      "/reset": false,
+      "/step": false,
+      "/state": false,
+      "/schema": false,
+      "/mcp": false
     },
-    "core_endpoints_ok": true,
-    "endpoints_passing": "6/6",
-    "status": "PASS"
+    "core_endpoints_ok": false,
+    "endpoints_passing": "0/6",
+    "status": "FAIL"
   },
-  "overall": "PASS [OK]",
-  "layers_passed": "6/6"
+  "overall": "PARTIAL [WARN]  (5/6 layers passed)",
+  "layers_passed": "5/6"
 }
