@@ -555,7 +555,7 @@ async def run_auto_simulation(display_name, mode, seed=42):
 # ---------------------------------------------------------------------------
 # Shared State
 # ---------------------------------------------------------------------------
-state = UIState()
+ui_state = UIState()
 
 # ---------------------------------------------------------------------------
 # CSS
@@ -1003,11 +1003,11 @@ def build_gui():
                             status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
 
                 async def _on_reset(task_id, seed):
-                    summary = await state.start_session(task_id, seed)
+                    summary = await ui_state.start_session(task_id, seed)
                     return summary, None, gr.update(interactive=True)
 
                 async def _on_step(rate, use_dark, dark_frac_val):
-                    return await state.step(rate, use_dark, dark_frac_val)
+                    return await ui_state.step(rate, use_dark, dark_frac_val)
 
                 reset_btn.click(_on_reset, inputs=[task_select, man_seed], outputs=[status_text, plot_output, step_btn])
                 step_btn.click(
