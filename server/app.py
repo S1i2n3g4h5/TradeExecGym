@@ -251,7 +251,7 @@ app = gr.mount_gradio_app(app, build_gui(), path="/")
 def main():
     import uvicorn
     port = int(os.getenv("PORT", "7860"))
-    uvicorn.run("server.app:app", host="0.0.0.0", port=port)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, timeout_keep_alive=60)
 
 
 if __name__ == "__main__":

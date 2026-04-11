@@ -6,22 +6,23 @@ TradeExecGym Client — Standardized HTTP Client.
 Aligned with FarmSimulation project structure.
 """
 
-import requests
+import httpx
 import json
 import re
+import asyncio
 from typing import Optional, Dict, Any
 
 class TradeExecClient:
     """Standard HTTP Client for TradeExecGym Smart Order Router."""
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
-        self._session = requests.Session()
+        self._client = httpx.AsyncClient(timeout=60.0) # Institutional timeout for microstructure
 
     async def __aenter__(self): 
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb): 
-        pass
+        await self._client.aclose()
 
     def _unwrap(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Convert OpenEnv response to flat dict with reward and done."""
@@ -34,26 +35,18 @@ class TradeExecClient:
             return flat
         return raw
 
-    def _reset_sync(self, task_id: str = "task_1", seed: Optional[int] = None) -> Dict[str, Any]:
-        """Synchronous implementation of reset."""
-        payload = {"task_id": task_id, "seed": seed}
-        r = self._session.post(f"{self.base_url}/reset", json=payload, timeout=30)
-        r.raise_for_status()
-        return self._unwrap(r.json())
-
     async def reset(self, task_id: str = "task_1", seed: Optional[int] = None) -> Dict[str, Any]:
         """Reset the environment for a new episode."""
-        return self._reset_sync(task_id=task_id, seed=seed)
-
-    def _step_sync(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """Synchronous implementation of step."""
-        r = self._session.post(f"{self.base_url}/step", json={"action": action}, timeout=30)
+        payload = {"task_id": task_id, "seed": seed}
+        r = await self._client.post(f"{self.base_url}/reset", json=payload)
         r.raise_for_status()
         return self._unwrap(r.json())
 
     async def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute one simulation step."""
-        return self._step_sync(action=action)
+        r = await self._client.post(f"{self.base_url}/step", json={"action": action})
+        r.raise_for_status()
+        return self._unwrap(r.json())
 
     async def execute_trade(
         self,
@@ -68,23 +61,20 @@ class TradeExecClient:
             "dark_pool_fraction": float(dark_pool_fraction)
         }
         obs = await self.step(action)
-        # Return the output text from info if available, otherwise generic
         return obs.get("info", {}).get("output", "Trade executed.")
-
-    def _get_state_sync(self) -> Dict[str, Any]:
-        """Synchronous state fetch."""
-        r = self._session.get(f"{self.base_url}/state", timeout=10)
-        r.raise_for_status()
-        return r.json()
 
     async def get_market_state(self) -> str:
         """Fetch human-readable market narrative."""
-        data = self._get_state_sync()
+        r = await self._client.get(f"{self.base_url}/state")
+        r.raise_for_status()
+        data = r.json()
         return data.get("text_summary") or data.get("output") or "No state available."
 
     async def get_reward(self) -> float:
         """Retrieve the current grader score / reward."""
-        data = self._get_state_sync()
+        r = await self._client.get(f"{self.base_url}/state")
+        r.raise_for_status()
+        data = r.json()
         return float(data.get("reward", 0.0))
 
     async def get_grader_score(self) -> float:
@@ -93,7 +83,7 @@ class TradeExecClient:
 
     async def close(self):
         """Close the underlying HTTP session."""
-        self._session.close()
+        await self._client.aclose()
 
     def sync(self):
         """Returns a synchronous wrapper for this client."""
@@ -102,7 +92,8 @@ class TradeExecClient:
 class SyncTradeEnv:
     """Synchronous wrapper for TradeExecClient matching YourRlEnv interface."""
     def __init__(self, client: TradeExecClient):
-        self.client = client
+        self.base_url = client.base_url
+        self._sync_client = httpx.Client(timeout=30.0)
 
     def __enter__(self):
         return self
@@ -111,16 +102,26 @@ class SyncTradeEnv:
         self.close()
 
     def close(self):
-        """Frees any session resources."""
-        self.client._session.close()
+        self._sync_client.close()
 
-    def reset(self, **kwargs):
-        res = self.client._reset_sync(**kwargs)
+    def _unwrap(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+        if "observation" in raw:
+            flat = dict(raw["observation"])
+            flat["reward"] = raw.get("reward")
+            flat["done"] = raw.get("done", False)
+            return flat
+        return raw
+
+    def reset(self, task_id="task_1", seed=None):
+        payload = {"task_id": task_id, "seed": seed}
+        r = self._sync_client.post(f"{self.base_url}/reset", json=payload)
+        r.raise_for_status()
+        res = self._unwrap(r.json())
+        
         from models import YourRlObservation
         try:
             obs = YourRlObservation(**res)
         except Exception:
-            # Fallback to empty observation if validation still fails for some reason
             obs = YourRlObservation()
             
         from collections import namedtuple
@@ -130,7 +131,6 @@ class SyncTradeEnv:
     def step(self, action):
         from models import YourRlAction
         if isinstance(action, YourRlAction):
-            # Convert command to participation_rate if needed
             import re
             nums = re.findall(r"0\.\d+", action.command)
             if nums:
@@ -140,7 +140,9 @@ class SyncTradeEnv:
             p_rate = 0.05
 
         p_rate = max(0.0, min(0.25, float(p_rate)))
-        res = self.client._step_sync({"participation_rate": p_rate})
+        r = self._sync_client.post(f"{self.base_url}/step", json={"action": {"participation_rate": p_rate}})
+        r.raise_for_status()
+        res = self._unwrap(r.json())
 
         from models import YourRlObservation
         try:
@@ -148,12 +150,13 @@ class SyncTradeEnv:
         except Exception:
             obs = YourRlObservation()
             
-        # Ensure reward and done are picked up from the response
         reward_val = res.get("reward", 0.0)
         done_val = res.get("done", False)
         
         from collections import namedtuple
         Result = namedtuple("Result", ["observation", "done", "reward"])
         return Result(observation=obs, done=done_val, reward=reward_val)
+
+YourRlEnv = TradeExecClient
 
 YourRlEnv = TradeExecClient
