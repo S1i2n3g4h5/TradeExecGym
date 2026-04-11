@@ -158,6 +158,7 @@ class UIState:
 
         self.task_id = task_id
         self.history = []
+        self.order_book_data = []
         self.current_obs = obs
         self.is_running = True
 
@@ -209,6 +210,8 @@ class UIState:
             "pct_done": 0.0,
             "is_bps": 0.0,
             "score": 0.0,
+            "shares_remaining": 0,
+            "total_shares": 0,
             "step": len(self.history),
             "steps_left": 30
         }
@@ -228,9 +231,24 @@ class UIState:
                         if len(parts) > 1:
                             val = parts[1].split()[0].replace(",", "").strip()
                             metrics["price"] = float(val)
-                    if "Executed:" in line and "%" in line:
-                        val = line.split("(")[1].split("%")[0].strip()
-                        metrics["pct_done"] = float(val)
+                    if "Executed:" in line and "/" in line:
+                        # Format: Executed:  10,000 / 100,000 (10.0%)
+                        try:
+                            after_slash = line.split("/")[1]
+                            total_str = after_slash.split("(")[0].replace(",", "").strip()
+                            metrics["total_shares"] = int(total_str)
+                        except (ValueError, IndexError): pass
+
+                        if "(" in line and "%" in line:
+                            val = line.split("(")[1].split("%")[0].strip()
+                            metrics["pct_done"] = float(val)
+                    
+                    if "Remaining:" in line:
+                        try:
+                            val = line.split("Remaining:")[1].split("shares")[0].replace(",", "").strip()
+                            metrics["shares_remaining"] = int(val)
+                        except (ValueError, IndexError): pass
+
                     if "Your IS:" in line:
                         raw = line.split("Your IS:")[1].strip()
                         val = raw.lower().replace("bps", "").strip().split()[0]
@@ -351,21 +369,37 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
         elif "Volatile" in display_name: max_steps = 90
         elif "Adversarial" in display_name: max_steps = 120
         elif "Deadline" in display_name: max_steps = 80
+        
+        TASK_SHARES = {
+            "task1_twap_beater": 100_000,
+            "task2_vwap_optimizer": 250_000,
+            "task3_volatile_execution": 400_000,
+            "task4_adversarial": 200_000,
+            "task5_deadline_pressure": 1_000_000,
+        }
+        total_shares = TASK_SHARES.get(task_id, 100_000)
 
         done = False
         step = 0
+        metrics = {"shares_remaining": total_shares, "total_shares": total_shares}
+        
         while not done and step < max_steps:
             step += 1
             state_text = await client.get_market_state()
+            
+            # Sync metrics from current market state
+            step_metrics = state_parser._parse_result(state_text)
+            current_rem = step_metrics.get("shares_remaining") or metrics["shares_remaining"]
+            current_tot = step_metrics.get("total_shares") or total_shares
+            steps_left = step_metrics.get("steps_left") or max(1, max_steps - step)
 
-            base_rate = 0.05
-            if "Remaining:" in state_text:
-                try:
-                    rem = int(state_text.split("Remaining:")[1].split("shares")[0].replace(",", "").strip())
-                    tl = int(state_text.split("Time left:")[1].split("steps")[0].strip())
-                    base_rate = heuristic.calculate_rate(rem, 1_000_000, tl, 0.0)
-                except Exception:
-                    pass
+            base_rate = heuristic.calculate_rate(
+                shares_remaining=max(1, current_rem), 
+                total_shares=current_tot, 
+                steps_left=steps_left, 
+                current_is=0.0
+            )
+            base_rate = max(0.01, min(0.25, base_rate))
 
             final_rate = base_rate
             try:
@@ -463,40 +497,49 @@ async def run_auto_simulation(display_name, mode, seed=42):
 
         done = False
         step = 0
+        metrics = {}
         while not done and step < max_steps:
             steps_left = max(1, max_steps - step)
             rate = 0.05
             use_dark = False
             dark_frac = 0.0
 
+            # Use metrics from previous step if available, else fallback to setup
+            if step > 0 and "shares_remaining" in metrics:
+                current_rem = metrics["shares_remaining"]
+                current_tot = metrics["total_shares"] or total_shares
+            else:
+                current_rem = shares_remaining
+                current_tot = total_shares
+
             if mode == "Volume-Weighted (VWAP)":
                 # U-shaped intraday volume: heavy at open/close, light midday
                 p = step / max(1, max_steps)
                 vol_ratio = 1.6 if p < 0.20 else (0.5 if p < 0.8 else 1.8)
-                twap_base = shares_remaining / (steps_left * ADV_PER_STEP)
+                twap_base = current_rem / (steps_left * ADV_PER_STEP)
                 rate = min(0.25, max(0.01, twap_base * vol_ratio))
 
             elif mode == "Optimal Heuristic (Math)":
                 # Pure Almgren-Chriss mathematical optimum
                 rate = h.calculate_rate(
-                    shares_remaining=max(1, shares_remaining),
-                    total_shares=total_shares,
+                    shares_remaining=max(1, current_rem),
+                    total_shares=current_tot,
                     steps_left=steps_left,
                     current_is=0.0
                 )
                 rate = max(0.01, min(0.25, rate))
 
             elif mode == "Hybrid (Heuristic + LLM)":
-                # Math base + context-aware LLM-style adjustments (distinct from pure heuristic)
+                # Math base + context-aware LLM-style adjustments
                 import random as _rnd
                 base_rate = h.calculate_rate(
-                    shares_remaining=max(1, shares_remaining),
-                    total_shares=total_shares,
+                    shares_remaining=max(1, current_rem),
+                    total_shares=current_tot,
                     steps_left=steps_left,
                     current_is=0.0
                 )
                 base_rate = max(0.01, min(0.25, base_rate))
-                pct_remaining = shares_remaining / max(1, total_shares)
+                pct_remaining = current_rem / max(1, current_tot)
                 pct_time_left = steps_left / max(1, max_steps)
 
                 # LLM cognitive layer decisions:
@@ -517,11 +560,7 @@ async def run_auto_simulation(display_name, mode, seed=42):
                     # ACCELERATE hard for deadline task in second half
                     rate = min(0.25, base_rate * 1.4)
                 else:
-                    rate = base_rate  # APPROVE suggestion
-
-            # Update local share estimate for next step
-            shares_filled = min(shares_remaining, int(rate * ADV_PER_STEP))
-            shares_remaining = max(0, shares_remaining - shares_filled)
+                    rate = base_rate
 
             result = await client.execute_trade(
                 participation_rate=rate,
@@ -983,13 +1022,20 @@ def build_gui():
 
                         with gr.Column(scale=2):
                             live_plot = gr.Plot(label="Real-time Execution Trace")
-                            live_status = gr.Markdown("Ready to evaluate...")
+                            with gr.Row():
+                                live_status = gr.Markdown("Ready to evaluate...")
+                                live_book = gr.Dataframe(
+                                    headers=["Type", "Price", "Size", "Iceberg"],
+                                    datatype=["str", "str", "str", "bool"],
+                                    label="L2 Order Book",
+                                    interactive=False
+                                )
                             live_logs = gr.Code(label="OpenEnv Compliance Logs ([START]/[STEP]/[END])", interactive=False)
 
                 run_live_btn.click(
                     run_live_eval,
                     inputs=[live_task, live_token, live_model, live_prompt, live_seed],
-                    outputs=[live_status, live_plot, live_json, live_logs, auto_book]
+                    outputs=[live_status, live_plot, live_json, live_logs, live_book]
                 )
 
             # ===============================================================
@@ -1022,20 +1068,27 @@ def build_gui():
 
                         with gr.Column(scale=2):
                             plot_output = gr.Plot(label="Market Canvas")
-                            status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
+                            with gr.Row():
+                                status_text = gr.Textbox(label="Agent Log & LLM Narratives", lines=15, max_lines=20)
+                                man_book = gr.Dataframe(
+                                    headers=["Type", "Price", "Size", "Iceberg"],
+                                    datatype=["str", "str", "str", "bool"],
+                                    label="L2 Order Book",
+                                    interactive=False
+                                )
 
                 async def _on_reset(task_id, seed):
                     summary = await ui_state.start_session(task_id, seed)
-                    return summary, None, gr.update(interactive=True)
+                    return summary, None, gr.update(interactive=True), 0.0, 0.0, [], []
 
                 async def _on_step(rate, use_dark, dark_frac_val):
                     return await ui_state.step(rate, use_dark, dark_frac_val)
 
-                reset_btn.click(_on_reset, inputs=[task_select, man_seed], outputs=[status_text, plot_output, step_btn])
+                reset_btn.click(_on_reset, inputs=[task_select, man_seed], outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json, man_book])
                 step_btn.click(
                     _on_step,
                     inputs=[rate_slider, dark_check, dark_frac],
-                    outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json, auto_book]
+                    outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json, man_book]
                 )
 
             # ===============================================================
