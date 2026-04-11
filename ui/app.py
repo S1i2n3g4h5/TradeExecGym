@@ -45,8 +45,11 @@ def get_loaded_agent():
         if os.path.exists(MODEL_PATH):
             _cached_agent = PPO.load(MODEL_PATH)
             print(f"[app_visual] Lazily loaded GRPO Agent from {MODEL_PATH}")
+    except ImportError:
+        print("[app_visual] (Note) RL Agent inference skipped: 'stable_baselines3' is omitted in lightweight UI images.")
+        _cached_agent = None
     except Exception as e:
-        print(f"[app_visual] Model loading skipped or failed: {e}")
+        print(f"[app_visual] Model loading skipped: {e}")
         _cached_agent = None
     return _cached_agent
 
@@ -870,11 +873,15 @@ def _load_robustness_report():
 # GUI Builder
 # ---------------------------------------------------------------------------
 def build_gui():
-    with gr.Blocks(
-        title="TradeExecGym — Institutional SOR Dashboard",
-        theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="slate"),
-        css=CUSTOM_CSS,
-    ) as demo:
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*parameters have been moved from the Blocks constructor.*")
+        demo = gr.Blocks(
+            title="TradeExecGym — Institutional SOR Dashboard",
+            theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="slate"),
+            css=CUSTOM_CSS,
+        )
+    with demo:
 
         # -- Hero Banner ------------------------------------------------------
         gr.HTML("""
