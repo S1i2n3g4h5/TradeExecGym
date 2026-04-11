@@ -71,6 +71,67 @@ class UIState:
         self.is_running = False
         self.current_obs = None
         self.task_id = "task1_twap_beater"
+        self.training_logs = ""
+        self.order_book_data = []
+
+    def _parse_order_book(self, text):
+        """Extracts L2 book levels from the text_summary."""
+        book = []
+        if not text: return []
+        try:
+            lines = text.split("\n")
+            in_bids = False
+            in_asks = False
+            for line in lines:
+                if "ASK" in line and "SIZE" in line:
+                    in_asks = True; in_bids = False; continue
+                if "---MID---" in line:
+                    in_asks = False; in_bids = True; continue
+                if "BID DEPTH" in line:
+                    break
+                
+                if in_asks or in_bids:
+                    parts = line.split()
+                    if len(parts) >= 2 and "$" in parts[0]:
+                        price = parts[0].replace("$", "")
+                        size = parts[1].replace(",", "")
+                        book.append({
+                            "Type": "ASK" if in_asks else "BID",
+                            "Price": price,
+                            "Size": size,
+                            "Iceberg": "[ICE]" in line
+                        })
+            # Reorder for visual: Asks ascending, Bids descending
+            return book
+        except Exception:
+            return []
+
+    async def run_training_dry_run(self):
+        """Executes the training dry run and captures output for the UI."""
+        import subprocess
+        import sys
+        self.training_logs = "[UI] 🚀 Starting GRPO Training Pipeline Dry Run...\n"
+        yield self.training_logs
+
+        cmd = [sys.executable, "training/train_grpo_llm.py", "--dry-run", "--episodes", "2"]
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+        for line in process.stdout:
+            self.training_logs += line
+            yield self.training_logs
+        
+        process.wait()
+        if process.returncode == 0:
+            self.training_logs += "\n[OK] Training dry run complete! Agent has self-improved.\n"
+        else:
+            self.training_logs += f"\n[FAIL] Training process exited with code {process.returncode}\n"
+        yield self.training_logs
 
     async def start_session(self, display_name, seed=42):
         if self.client is None:
@@ -122,6 +183,7 @@ class UIState:
             metrics = self._parse_result(result)
             self.history.append(metrics)
             self.current_obs = result
+            self.order_book_data = self._parse_order_book(result)
 
             is_val = metrics.get("is_bps", 0.0)
             score_val = metrics.get("score", 0.0)
@@ -129,7 +191,7 @@ class UIState:
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
                 self.is_running = False
 
-            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.history
+            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.history, self.order_book_data
         except Exception as e:
             return f"[FAIL] Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, []
 
@@ -253,7 +315,7 @@ def plot_trajectory(history_df, title="Market Dynamics"):
 async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42):
     """Streams a live inference session using an LLM + Heuristic Hybrid."""
     if not hf_token:
-        yield "### Error: HF_TOKEN is required for Live Eval.", None, [], "[ERROR] Missing Token"
+        yield "### Error: HF_TOKEN is required for Live Eval.", None, [], "[ERROR] Missing Token", []
         return
 
     client = TradeExecClient(base_url=ENV_BASE_URL)
@@ -263,7 +325,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
 
     log_stream = f"[START] task={task_id} env=trade_exec_gym model={model_name}\n"
     try:
-        yield f"### Initializing {task_id}...", None, [], log_stream
+        yield f"### Initializing {task_id}...", None, [], log_stream, []
 
         await client.reset(task_id=task_id, seed=int(seed))
         state_parser = UIState()
@@ -322,13 +384,7 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
             log_step = f"[STEP] step={step} action={final_rate:.4f} reward={reward:.2f} done={str(done_bool).lower()} error=null\n"
             log_stream += log_step
 
-            yield (
-                f"### Executing {task_id}...\nStep {step}/{max_steps}",
-                plot_trajectory(history, f"Live Eval: {model_name}"),
-                history,
-                log_stream
-            )
-
+            book_data = state_parser._parse_order_book(result)
             if done_bool:
                 done = True
                 score = metrics.get("score", 0.0)
@@ -337,12 +393,21 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
                     f"### Session Complete\nFinal Score: {score:.4f}",
                     plot_trajectory(history, f"Live Eval: {model_name}"),
                     history,
-                    log_stream
+                    log_stream,
+                    book_data
+                )
+            else:
+                yield (
+                    f"### Executing {task_id}...\nStep {step}/{max_steps}",
+                    plot_trajectory(history, f"Live Eval: {model_name}"),
+                    history,
+                    log_stream,
+                    book_data
                 )
 
         await client.close()
     except Exception as e:
-        yield f"### Session Failed\n{str(e)}", None, [], log_stream
+        yield f"### Session Failed\n{str(e)}", None, [], log_stream, []
         try:
             await client.close()
         except Exception:
@@ -452,10 +517,19 @@ async def run_auto_simulation(display_name, mode, seed=42):
             metrics = state_parser._parse_result(result)
             metrics["step"] = step
             history.append(metrics)
+            
+            book_data = state_parser._parse_order_book(result)
+            yield (
+                f"### [EXE] Simulation Running — Step {step}/{max_steps}\nStrategy: **{mode}**",
+                plot_trajectory(history, f"Auto: {mode}"),
+                history,
+                book_data
+            )
 
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
                 done = True
             step += 1
+            await asyncio.sleep(0.05)
 
         final_is = history[-1].get("is_bps", 0) if history else 0
         final_score = history[-1].get("score", 0) if history else 0
@@ -468,14 +542,14 @@ async def run_auto_simulation(display_name, mode, seed=42):
             f"| Grader Score | {final_score:.4f} / 1.0 |\n"
         )
         await client.close()
-        return summary_text, plot_trajectory(history, f"Auto: {mode}"), history
+        yield summary_text, plot_trajectory(history, f"Auto: {mode}"), history, book_data
 
     except Exception as e:
         try:
             await client.close()
         except Exception:
             pass
-        return f"### [FAIL] Simulation Failed\n\nError: {str(e)}", None, []
+        yield f"### [FAIL] Simulation Failed\n\nError: {str(e)}", None, [], []
 
 
 # ---------------------------------------------------------------------------
@@ -790,8 +864,9 @@ def build_gui():
         # -- Hero Banner ------------------------------------------------------
         gr.HTML("""
         <div class="hero-header">
-            <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;z-index:10;">
-                <span class="top-pill">🟢 OpenEnv &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp; Meta × HuggingFace Hackathon 2026</span>
+            <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;z-index:10;gap:12px;">
+                <span class="top-pill" style="background:rgba(99,102,241,0.1);color:#a5b4fc;border-color:rgba(99,102,241,0.3);">🧬 Recursive Update 2.0</span>
+                <span class="top-pill">🟢 OpenEnv &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp; Meta × HuggingFace Hackathon</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:14px;position:relative;z-index:10;">
                 <span style="font-size:3.2rem;line-height:1;">📈</span>
@@ -845,13 +920,23 @@ def build_gui():
 
                     with gr.Column(scale=2):
                         gr.Markdown("### 📊 Live Performance Feed")
-                        auto_plot = gr.Plot(label="Order Trajectory")
+                        with gr.Row():
+                            with gr.Column(scale=3):
+                                auto_plot = gr.Plot(label="Order Trajectory")
+                            with gr.Column(scale=2):
+                                gr.Markdown("#### 📈 L2 Order Book")
+                                auto_book = gr.Dataframe(
+                                    headers=["Type", "Price", "Size", "Iceberg"],
+                                    datatype=["str", "str", "str", "bool"],
+                                    label="Top 10 Levels",
+                                    interactive=False
+                                )
                         auto_summary = gr.Markdown(label="Post-Trade Analysis")
 
                 run_auto_btn.click(
                     run_auto_simulation,
                     inputs=[auto_task_dd, auto_mode_dd, auto_seed],
-                    outputs=[auto_summary, auto_plot, auto_json]
+                    outputs=[auto_summary, auto_plot, auto_json, auto_book]
                 )
 
             # ===============================================================
@@ -882,7 +967,7 @@ def build_gui():
                 run_live_btn.click(
                     run_live_eval,
                     inputs=[live_task, live_token, live_model, live_prompt, live_seed],
-                    outputs=[live_status, live_plot, live_json, live_logs]
+                    outputs=[live_status, live_plot, live_json, live_logs, auto_book]
                 )
 
             # ===============================================================
@@ -928,7 +1013,7 @@ def build_gui():
                 step_btn.click(
                     _on_step,
                     inputs=[rate_slider, dark_check, dark_frac],
-                    outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json]
+                    outputs=[status_text, plot_output, step_btn, is_box, score_box, man_json, auto_book]
                 )
 
             # ===============================================================
@@ -1106,9 +1191,73 @@ def build_gui():
                     """)
 
             # ===============================================================
-            # Tab 5 — Project & Environment Info
+            # Tab 5 — Recursive Improvement (GRPO)
             # ===============================================================
-            with gr.TabItem("📖 Environment Info"):
+            with gr.TabItem("🧠 Recursive Improvement (GRPO)"):
+                with gr.Column(elem_classes=["info-section"]):
+                    gr.HTML("""
+                    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
+                        <span style="font-size:2rem;">🧬</span>
+                        <div>
+                            <div style="color:#10b981;font-size:1.1rem;font-weight:700;">Group Relative Policy Optimization (GRPO)</div>
+                            <div style="color:#475569;font-size:0.82rem;">Verifiable Self-Improvement via Triple-Reward Alignment</div>
+                        </div>
+                    </div>
+                    """)
+                    
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("""
+#### How it Works
+Instead of human labels, we train our LLM using three **automated reward functions**:
+1. **Format Validator**: Ensures logical JSON output.
+2. **Strategy Alignment**: Matches agent decisions to Market Regimes.
+3. **Execution Quality**: Penalizes deviations from Almgren-Chriss optima.
+
+This tab allows you to trigger a **Recursive Training Dry-Run** to verify the pipeline.
+""")
+                            train_btn = gr.Button("🚀 Start Training Dry-Run", variant="primary")
+                            gr.Markdown("---")
+                            gr.Markdown("#### Live Reward Physics")
+                            gr.HTML("""
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                                <div style="background:rgba(16,185,129,0.05);padding:10px;border-radius:8px;border:1px solid rgba(16,185,129,0.2);">
+                                    <div style="color:#10b981;font-size:0.7rem;font-weight:800;">FORMAT</div>
+                                    <div style="color:#94a3b8;font-size:0.75rem;">JSON Schema Pass</div>
+                                </div>
+                                <div style="background:rgba(99,102,241,0.05);padding:10px;border-radius:8px;border:1px solid rgba(99,102,241,0.2);">
+                                    <div style="color:#6366f1;font-size:0.7rem;font-weight:800;">ADVERSARY</div>
+                                    <div style="color:#94a3b8;font-size:0.75rem;">Stochastic Evasion</div>
+                                </div>
+                                <div style="background:rgba(251,191,36,0.05);padding:10px;border-radius:8px;border:1px solid rgba(251,191,36,0.2);">
+                                    <div style="color:#fbbf24;font-size:0.7rem;font-weight:800;">QUALITY</div>
+                                    <div style="color:#94a3b8;font-size:0.75rem;">vs. AC-Optimal</div>
+                                </div>
+                                <div style="background:rgba(244,63,94,0.05);padding:10px;border-radius:8px;border:1px solid rgba(244,63,94,0.2);">
+                                    <div style="color:#f43f5e;font-size:0.7rem;font-weight:800;">LOGIC</div>
+                                    <div style="color:#94a3b8;font-size:0.75rem;">CoT vs Regime</div>
+                                </div>
+                            </div>
+                            """)
+                        
+                        with gr.Column(scale=2):
+                            gr.Markdown("#### Training Pipeline Log")
+                            training_output = gr.Code(
+                                label="GRPOTrainer Logs",
+                                language="shell",
+                                interactive=False,
+                                lines=20,
+                            )
+                    
+                    train_btn.click(
+                        fn=ui_state.run_training_dry_run,
+                        outputs=training_output,
+                    )
+
+            # ===============================================================
+            # Tab 6 — Project & Environment Info
+            # ===============================================================
+
                 with gr.Column(elem_classes=["info-section"]):
                     gr.HTML(_load_robustness_report())
 
@@ -1136,15 +1285,20 @@ that makes agents solve it — exactly as real hedge fund Smart Order Routers do
 | **Max Concurrent Sessions** | 5 |
 | **Python** | ≥ 3.10 |
 
-### Action & Observation Space
-
-| Dimension | Type | Range | Description |
-|---|---|---|---|
 | **Action** | `participation_rate` | `[0.0, 0.25]` | Fraction of Average Daily Volume to target per step |
-| **Observation** | Market State Text | Natural Language | Narrative + structured market data snapshot |
+| **Observation** | Market State Text | Natural Language | **L2 Order Book Snapshot** + Market Regime + Narrative |
 | **Reward** | Per-step IS delta + terminal bonus | Unbounded float | Dense + terminal bonus |
 | **Grader Score** | Normalized | `[0.0, 1.0]` | Task-specific grader for leaderboard ranking |
 | **Episode Length** | Variable | 30 – 120 steps | Depends on task difficulty |
+
+### Institutional Upgrades (Phase 2)
+
+| Feature | Type | Capability |
+|---|---|---|
+| **L2 Order Book** | Microstructure | Real-time Bid/Ask depth (10 levels) + Spread dynamics |
+| **Market Regimes** | Simulation | Procedural `FLASH_CRASH`, `LIQUIDITY_CRISIS`, and `MOMENTUM` shifts |
+| **GRPO Training** | Intelligence | Self-improving agentic reasoning using `trl` GRPOTrainer |
+| **Adversarial HFT** | Strategy | Pattern-matching HFT bot requires stochastic stealth |
 
 ### Live Environment State Variables
 
@@ -1173,7 +1327,9 @@ Every step runs three simultaneous calculations. No random walks, no fake data:
 ```
 
 This is the **Almgren-Chriss (2000)** model — the same framework used by Goldman Sachs, Citadel,
-and every major systematic trading desk. The Implementation Shortfall (IS) formula:
+This is the **Almgren-Chriss (2000)** model enriched with **L2 Microstructure**. We simulate
+the impact of your trades not just as a flat cost, but as orders walking the Limit Order Book.
+The Implementation Shortfall (IS) formula:
 
 ```
 IS (bps) = |avg_exec_price − arrival_price| / arrival_price × 10,000
@@ -1280,9 +1436,9 @@ Both tool-calling LLMs and RL policy networks use identical endpoints.
 |  ┌------------------┐    |  ┌-----------------------------------┐   |
 |  │ Auto Simulation  │    |  │  TradeExecEnvironment              │   |
 |  │ Live LLM Eval    │◄---+--│  (MCPEnvironment subclass)        │   |
-|  │ Manual Challenge │    |  │  -> env/price_model.py (GBM)       │   |
-|  │ Info / Arch Tabs │    |  │  -> env/venue_router.py            │   |
-|  └------------------┘    |  │  -> env/reward.py (IS grader)     │   |
+|  │ Manual Challenge │    |  │  -> env/order_book.py (L2 Book)   │   |
+|  │ Info / Arch Tabs │    |  │  -> env/market_regime.py (Events)  │   |
+|  └------------------┘    |  │  -> env/reward.py (GRPO Logic)     │   |
 |  TradeExecClient         |  │  -> tasks/ (5 task configs)        │   |
 |  (httpx async) ----------+-►│                                   │   |
 +--------------------------+-------------------------------------------+

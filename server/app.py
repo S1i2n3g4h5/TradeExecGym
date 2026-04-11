@@ -74,6 +74,32 @@ TASKS: List[Dict[str, Any]] = [
         "task_grader": "grade/task_3",
         "has_grader": True,
     },
+    {
+        "id": "task_4",
+        "name": "Adversarial HFT",
+        "difficulty": "expert",
+        "description": (
+            "Execute 600,000 shares vs an HFT pattern-matching adversary. "
+            "Use RANDOMIZE strategy to break execution autocorrelation."
+        ),
+        "max_steps": 120,
+        "grader": "grade/task_4",
+        "task_grader": "grade/task_4",
+        "has_grader": True,
+    },
+    {
+        "id": "task_5",
+        "name": "Deadline Pressure",
+        "difficulty": "master",
+        "description": (
+            "1,000,000 shares in 80 steps. High penalty for unexecuted inventory. "
+            "Manage aggressive pace vs market impact."
+        ),
+        "max_steps": 80,
+        "grader": "grade/task_5",
+        "task_grader": "grade/task_5",
+        "has_grader": True,
+    },
 ]
 
 
@@ -187,6 +213,34 @@ def grade_task_3_get() -> Dict[str, float]:
 @app.post("/grade/task_3", operation_id="grade_task_3_post")
 def grade_task_3_post() -> Dict[str, float]:
     return _grade_task_3_payload()
+
+
+def _grade_task_4_payload() -> Dict[str, float]:
+    return build_grade_payload("task_4")
+
+
+def _grade_task_5_payload() -> Dict[str, float]:
+    return build_grade_payload("task_5")
+
+
+@app.get("/grade/task_4", operation_id="grade_task_4_get")
+def grade_task_4_get() -> Dict[str, float]:
+    return _grade_task_4_payload()
+
+
+@app.post("/grade/task_4", operation_id="grade_task_4_post")
+def grade_task_4_post() -> Dict[str, float]:
+    return _grade_task_4_payload()
+
+
+@app.get("/grade/task_5", operation_id="grade_task_5_get")
+def grade_task_5_get() -> Dict[str, float]:
+    return _grade_task_5_payload()
+
+
+@app.post("/grade/task_5", operation_id="grade_task_5_post")
+def grade_task_5_post() -> Dict[str, float]:
+    return _grade_task_5_payload()
 
 
 def main():

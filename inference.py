@@ -175,7 +175,8 @@ def build_user_prompt(
     # Include last 3 step decisions as context for multi-turn reasoning
     history_block = "\n".join(history[-3:]) if history else "None yet — this is your first step."
     # Trim market state to avoid token overflow while keeping key sections
-    output_trimmed = (last_output or "")[:1200]
+    # Increased to 2500 to accommodate rich L2 book and regime data
+    output_trimmed = (last_output or "")[:2500]
     return textwrap.dedent(
         f"""
         TASK: {task_description}

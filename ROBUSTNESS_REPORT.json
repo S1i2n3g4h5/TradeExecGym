@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-11T12:34:58.380369+00:00",
+  "timestamp": "2026-04-11T13:42:40.110343+00:00",
   "version": "1.0.0",
   "description": "4-Layer Robustness Pyramid for TradeExecGym. Layer 0: Environment boot. Layer 1: Unit tests. Layer 2: Baseline scores. Layer 3: Skill gradient. Layer 4: OpenEnv API compliance.",
   "layer0_environment_boot": {
@@ -14,17 +14,17 @@
     "status": "PASS"
   },
   "layer1_unit_tests": {
-    "passed": 68,
+    "passed": 79,
     "failed": 0,
     "errors": 0,
     "status": "PASS",
-    "stdout_tail": "============================= test session starts =============================\nplatform win32 -- Python 3.11.12, pytest-9.0.2, pluggy-1.6.0\nrootdir: D:\\SST_x_MetaHugginFace__HACKATHON\\trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 68 items\n\ntests\\test_adversary_advanced.py .....                                   [  7%]\ntests\\test_edge_cases.py ..........                                      [ 22%]\ntests\\test_openenv_validate.py .............                             [ 41%]\ntests\\test_physics.py ......                                             [ 50%]\ntests\\test_reward.py .....                                               [ 57%]\ntests\\test_submission_runtime.py ...                                     [ 61%]\ntests\\test_tasks.py .....................                                [ 92%]\ntests\\test_venue_router.py .....                                         [100%]\n\n============================= 68 passed in 7.62s ==============================\n"
+    "stdout_tail": "=========\nplatform win32 -- Python 3.11.12, pytest-9.0.2, pluggy-1.6.0\nrootdir: D:\\SST_x_MetaHugginFace__HACKATHON\\trade-exec-gym\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 79 items\n\ntests\\test_adversary_advanced.py .....                                   [  6%]\ntests\\test_edge_cases.py ..........                                      [ 18%]\ntests\\test_openenv_validate.py .............                             [ 35%]\ntests\\test_order_book.py ...........                                     [ 49%]\ntests\\test_physics.py ......                                             [ 56%]\ntests\\test_reward.py .....                                               [ 63%]\ntests\\test_submission_runtime.py ...                                     [ 67%]\ntests\\test_tasks.py .....................                                [ 93%]\ntests\\test_venue_router.py .....                                         [100%]\n\n============================= 79 passed in 7.06s ==============================\n"
   },
   "layer2_baseline_scores": {
     "scores": {
       "task1_twap_beater": 0.6375,
-      "task2_vwap_optimizer": 0.269,
-      "task3_volatile_execution": 0.77
+      "task2_vwap_optimizer": 0.408,
+      "task3_volatile_execution": 0.87
     },
     "details": {
       "task1_twap_beater": {
@@ -35,14 +35,14 @@
         "passed": true
       },
       "task2_vwap_optimizer": {
-        "score": 0.269,
+        "score": 0.408,
         "completion_pct": 75.6,
         "participation_rate_used": 0.25,
         "threshold": 0.2,
         "passed": true
       },
       "task3_volatile_execution": {
-        "score": 0.77,
+        "score": 0.87,
         "completion_pct": 56.7,
         "participation_rate_used": 0.2,
         "threshold": 0.2,
@@ -71,8 +71,8 @@
     "status": "PASS"
   },
   "performance_profiling": {
-    "reset_time_ms": 0.98,
-    "avg_step_time_ms": 0.008,
+    "reset_time_ms": 0.83,
+    "avg_step_time_ms": 0.01,
     "reset_threshold_ms": 200.0,
     "step_threshold_ms": 10.0,
     "reset_pass": true,

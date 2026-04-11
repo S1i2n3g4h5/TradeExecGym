@@ -69,8 +69,16 @@ server/trade_environment.py  (TradeExecEnvironment)
     |-- tasks/task5_deadline.py    [Extreme: 1M shares, 80 steps, 99.9% gate]
     |-- env/price_model.py         [Almgren-Chriss GBM dynamics]
     |-- env/venue_router.py        [Dark pool + toxic flow detection]
+    |-- env/order_book.py          [NEW: L2 Microstructure / Top 10 levels]
+    |-- env/market_regime.py       [NEW: Procedural Flash Crash/Crisis Generator]
     +-- env/reward.py              [3-component reward: dense + sparse + terminal]
 ```
+
+### New in Phase 0-2 (The Recursive Update)
+- **Agentic inference Pipeline**: Structed CoT reasoning with multi-turn history.
+- **Microstructure L2 Observation**: LLMs now see the Bid/Ask queue, spread dynamics, and order book imbalance.
+- **Autonomous Market Regimes**: Environment procedurally transitions between `NORMAL`, `FLASH_CRASH`, `MOMENTUM`, and `LIQUIDITY_CRISIS`.
+- **GRPO Training Infrastructure**: Verifiable reward functions and benchmarking against Almgren-Chriss Optimal baselines.
 
 ---
 
@@ -78,11 +86,11 @@ server/trade_environment.py  (TradeExecEnvironment)
 
 | Feature | Scoring Criterion | Weight |
 |---------|------------------|--------|
-| Almgren-Chriss price impact physics | Real-world utility | 30% |
-| 5-task curriculum (easy → extreme) | Task & grader quality | 25% |
-| Shadow baselines (same seed = fair comparison) | Environment design | 20% |
-| Typed Pydantic models, openenv validate | Code quality & spec | 15% |
-| Adversarial HFT dual-gate pattern detection | Creativity & novelty | 10% |
+| Almgren-Chriss + L2 Microstructure | Real-world utility / Depth | 30% |
+| GRPO Verifiable Training Pipeline   | Agentic Architecture      | 25% |
+| 5-task curriculum (easy → master)   | Task & grader quality     | 20% |
+| Procedural Market Regime Shifts     | Environment design        | 15% |
+| Adversarial HFT Pattern Detection    | Creativity & novelty      | 10% |
 
 ---
 

@@ -30,6 +30,8 @@ try:
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
     from baselines.heuristic_agent import AlmgrenChrissHeuristic
+    from env.order_book import OrderBookSimulator
+    from env.market_regime import MarketRegimeGenerator
 except ImportError:
     import sys
     import os
@@ -38,6 +40,8 @@ except ImportError:
     from env.venue_router import VenueRouter
     from env.reward import compute_reward
     from baselines.heuristic_agent import AlmgrenChrissHeuristic
+    from env.order_book import OrderBookSimulator
+    from env.market_regime import MarketRegimeGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         self.price_model: PriceModel = None
         self.venue_router: VenueRouter = None
         self.heuristic = AlmgrenChrissHeuristic()
+        self.order_book_sim = OrderBookSimulator()
+        self.regime_gen = MarketRegimeGenerator()
         self._last_reward: float = 0.0
         self._last_grade: float = 0.01
         self._prev_is: Optional[float] = None
@@ -194,8 +200,30 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
                 shares_remaining=self._shares_remaining,
             )
 
+            # --- Regime Generator Step ---
+            regime_state = self.regime_gen.step(self._step_count, self._max_steps)
+            if regime_state.dark_pool_disabled:
+                use_dark_pool = False
+                dark_pool_fraction = 0.0
+            
+            if regime_state.fill_rate_penalty > 0:
+                shares_to_fill = int(shares_to_fill * (1.0 - regime_state.fill_rate_penalty))
+            
+            if regime_state.news_shock_bps != 0:
+                self._arrival_price *= (1.0 + regime_state.news_shock_bps / 10000.0)
+                regime_state.news_shock_bps = 0.0
+
             # --- Price model step ---
+            original_sigma = self.price_model.sigma
+            self.price_model.sigma *= regime_state.sigma_multiplier
+            
             market_state = self.price_model.step(participation_rate)
+            
+            if regime_state.drift_bps_per_step != 0:
+                market_state.price *= (1.0 + regime_state.drift_bps_per_step / 10000.0)
+                
+            self.price_model.sigma = original_sigma
+
             if adv_penalty_bps > 0:
                 market_state.price *= (1.0 + adv_penalty_bps / 10_000.0)
             self._mid_price = market_state.price
@@ -308,6 +336,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
         self.venue_router = VenueRouter()
         # Seed venue router with episode seed for deterministic dark-pool outcomes
         self.venue_router.seed(seed)
+        self.order_book_sim.seed(seed)
+        self.regime_gen.seed(seed)
         
         # Ensure task-specific state (e.g. participation history) is reset
         if hasattr(self.active_task, "_episode_seed"):
@@ -577,6 +607,17 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             is_high_volatility=(self.active_task.sigma > 0.04)
         )
 
+        regime_text = self.regime_gen.current_regime.to_market_text()
+        
+        book = self.order_book_sim.generate(
+            mid_price=self._mid_price,
+            volatility=self.price_model.sigma * self.regime_gen.current_regime.sigma_multiplier,
+            participation_rate=suggested_rate,
+            volume_ratio=vol_ratio,
+            session=session
+        )
+        order_book_text = book.to_text()
+
         # ── IS trend (last step vs now) ────────────────────────────────────────
         is_trend = ""
         if hasattr(self, '_prev_is') and self._prev_is is not None:
@@ -633,6 +674,8 @@ class TradeExecEnvironment(Environment[TradeAction, TradeObservation, TradeState
             f"\nMARKET STATE -- Step {self._step_count}/{self._max_steps}\n"
             f"{'-'*52}\n"
             f"NARRATIVE: {narrative}\n"
+            f"\n{regime_text}\n"
+            f"\n{order_book_text}\n"
             f"\nINVENTORY\n"
             f"  Executed:  {self._shares_executed:>10,} / {self._total_shares:,} ({pct_done:.1f}%)\n"
             f"  Remaining: {self._shares_remaining:>10,} shares\n"

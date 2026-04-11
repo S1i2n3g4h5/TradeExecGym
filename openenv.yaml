@@ -17,3 +17,11 @@ tasks:
   - id: task_3
     difficulty: hard
     grader: grade/task_3
+
+  - id: task_4
+    difficulty: expert
+    grader: grade/task_4
+
+  - id: task_5
+    difficulty: master
+    grader: grade/task_5

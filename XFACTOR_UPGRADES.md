@@ -13,7 +13,14 @@ These additions would elevate TradeExecGym from "good RL environment" to "produc
 
 ---
 
-## 1. ORDER BOOK MICROSTRUCTURE (High Impact) 📊
+## 1. ✅ ORDER BOOK MICROSTRUCTURE (CORE) 📊
+**Implemented in Phase 2.**
+Our environment now simulates a full L2 limit order book with:
+- 10 levels of bid/ask depth.
+- Dynamic spreads based on volatility.
+- Iceberg order detection and partial fill probability.
+- LLM agents now reason about depth and imbalance natively.
+
 
 ### What It Is
 Real trading happens in a **limit order book** with bid/ask spreads, not just midprices.
@@ -236,7 +243,11 @@ This would be **LEGENDARY** for a hackathon.
 
 ---
 
-## 6. SMART ORDER ROUTER (SOR) LOGIC 🔀
+## 6. ✅ SMART ORDER ROUTER (SOR) LOGIC (CORE) 🔀
+**Implemented in Phase 2.**
+- Agents dynamically choose between Lite Venues and Dark Pools.
+- Routing logic factors in Toxicity detection and HFT Pattern Evacuation (Task 4).
+- Dark Pool availability is now procedural (Regime-dependent).
 
 ### What It Is
 Choose between multiple venues (NYSE, NASDAQ, Dark Pools, IEX) with different costs/speeds.
