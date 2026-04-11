@@ -229,7 +229,7 @@ class UIState:
                             val = parts[1].split()[0].replace(",", "").strip()
                             metrics["price"] = float(val)
                     if "Executed:" in line and "%" in line:
-                        val = line.split("Executed:")[1].split("%")[0].strip()
+                        val = line.split("(")[1].split("%")[0].strip()
                         metrics["pct_done"] = float(val)
                     if "Your IS:" in line:
                         raw = line.split("Your IS:")[1].strip()
@@ -256,8 +256,7 @@ class UIState:
         return metrics
 
     def format_history(self, history=None):
-        h = history if history is not None else self.history
-        return [[m.get("step", 0), m.get("price", 0.0), m.get("pct_done", 0.0), m.get("is_bps", 0.0), m.get("score", 0.0)] for m in h]
+        return history if history is not None else self.history
 
     def format_book(self, book=None):
         b = book if book is not None else self.order_book_data
