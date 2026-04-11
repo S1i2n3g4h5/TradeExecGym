@@ -196,9 +196,9 @@ class UIState:
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
                 self.is_running = False
 
-            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.history, self.order_book_data
+            return result, self.create_plot(), gr.update(interactive=self.is_running), is_val, score_val, self.format_history(), self.format_book()
         except Exception as e:
-            return f"[FAIL] Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, []
+            return f"[FAIL] Connection Error: {str(e)}", None, gr.update(), 0.0, 0.0, [], []
 
     def _parse_result(self, text):
         metrics = {
@@ -236,8 +236,9 @@ class UIState:
                         raw = line.split("Final IS:")[1].strip()
                         val = raw.lower().replace("bps", "").strip().split()[0]
                         metrics["is_bps"] = float(val)
-                    if "Grader Score:" in line:
-                        raw = line.split("Grader Score:")[1].strip()
+                    if "Grader Score:" in line or "Est. Score:" in line:
+                        prefix = "Grader Score:" if "Grader Score:" in line else "Est. Score:"
+                        raw = line.split(prefix)[1].strip()
                         val = raw.split("/")[0].strip()
                         metrics["score"] = float(val)
                     if "Time left:" in line:
@@ -250,6 +251,14 @@ class UIState:
             pass
 
         return metrics
+
+    def format_history(self, history=None):
+        h = history if history is not None else self.history
+        return [[m.get("step", 0), m.get("price", 0.0), m.get("pct_done", 0.0), m.get("is_bps", 0.0), m.get("score", 0.0)] for m in h]
+
+    def format_book(self, book=None):
+        b = book if book is not None else self.order_book_data
+        return [[x.get("Type", ""), x.get("Price", ""), x.get("Size", ""), x.get("Iceberg", False)] for x in b]
 
     def create_plot(self):
         if not self.history:
@@ -396,17 +405,17 @@ async def run_live_eval(display_name, hf_token, model_name, sys_prompt, seed=42)
                 yield (
                     f"### Session Complete\nFinal Score: {score:.4f}",
                     plot_trajectory(history, f"Live Eval: {model_name}"),
-                    history,
+                    state_parser.format_history(history),
                     log_stream,
-                    book_data
+                    state_parser.format_book(book_data)
                 )
             else:
                 yield (
                     f"### Executing {task_id}...\nStep {step}/{max_steps}",
                     plot_trajectory(history, f"Live Eval: {model_name}"),
-                    history,
+                    state_parser.format_history(history),
                     log_stream,
-                    book_data
+                    state_parser.format_book(book_data)
                 )
 
         await client.close()
@@ -526,8 +535,8 @@ async def run_auto_simulation(display_name, mode, seed=42):
             yield (
                 f"### [EXE] Simulation Running — Step {step}/{max_steps}\nStrategy: **{mode}**",
                 plot_trajectory(history, f"Auto: {mode}"),
-                history,
-                book_data
+                state_parser.format_history(history),
+                state_parser.format_book(book_data)
             )
 
             if "EPISODE COMPLETE" in result or "ENGINE ERROR" in result:
@@ -546,7 +555,7 @@ async def run_auto_simulation(display_name, mode, seed=42):
             f"| Grader Score | {final_score:.4f} / 1.0 |\n"
         )
         await client.close()
-        yield summary_text, plot_trajectory(history, f"Auto: {mode}"), history, book_data
+        yield summary_text, plot_trajectory(history, f"Auto: {mode}"), state_parser.format_history(history), state_parser.format_book(book_data)
 
     except Exception as e:
         try:
