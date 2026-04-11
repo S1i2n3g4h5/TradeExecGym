@@ -31,6 +31,8 @@ if ROOT_DIR not in sys.path:
 from openenv.core import create_app
 from server.trade_environment import TradeExecEnvironment
 from models import TradeAction, TradeObservation
+from ui.app import build_gui
+import gradio as gr
 
 GLOBAL_ENV = None
 
@@ -132,11 +134,11 @@ app = create_app(
 )
 
 
-@app.get("/")
-def root():
-    """Root redirect to API docs."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/docs")
+# @app.get("/")
+# def root():
+#     """Root redirect to API docs."""
+#     from fastapi.responses import RedirectResponse
+#     return RedirectResponse(url="/docs")
 
 
 @app.get("/ui")
@@ -242,6 +244,9 @@ def grade_task_5_get() -> Dict[str, float]:
 def grade_task_5_post() -> Dict[str, float]:
     return _grade_task_5_payload()
 
+
+# Mount Gradio UI at root
+app = gr.mount_gradio_app(app, build_gui(), path="/")
 
 def main():
     import uvicorn

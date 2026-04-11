@@ -29,21 +29,26 @@ from client import TradeExecClient
 ENV_BASE_URL = os.getenv('ENV_BASE_URL', 'http://localhost:7860')
 
 # ---------------------------------------------------------------------------
-# Model Loading
+# Model Loading (Lazy)
 # ---------------------------------------------------------------------------
 MODEL_PATH = "models/grpo_agent.zip"
-_loaded_agent = None
-try:
-    from stable_baselines3 import PPO
-    if os.path.exists(MODEL_PATH):
-        try:
-            _loaded_agent = PPO.load(MODEL_PATH)
-            print(f"[app_visual] Loaded GRPO Agent from {MODEL_PATH}")
-        except Exception as e:
-            print(f"[app_visual] Failed to load model at {MODEL_PATH}: {e}")
-            _loaded_agent = None
-except (ImportError, Exception):
-    _loaded_agent = None
+_cached_agent = None
+
+def get_loaded_agent():
+    """Lazily load the model only when first requested."""
+    global _cached_agent
+    if _cached_agent is not None:
+        return _cached_agent
+        
+    try:
+        from stable_baselines3 import PPO
+        if os.path.exists(MODEL_PATH):
+            _cached_agent = PPO.load(MODEL_PATH)
+            print(f"[app_visual] Lazily loaded GRPO Agent from {MODEL_PATH}")
+    except Exception as e:
+        print(f"[app_visual] Model loading skipped or failed: {e}")
+        _cached_agent = None
+    return _cached_agent
 
 TASKS = [
     "Task 1: The TWAP Beater",
@@ -859,6 +864,8 @@ def _load_robustness_report():
 def build_gui():
     with gr.Blocks(
         title="TradeExecGym — Institutional SOR Dashboard",
+        theme=gr.themes.Soft(primary_hue="emerald", secondary_hue="slate"),
+        css=CUSTOM_CSS,
     ) as demo:
 
         # -- Hero Banner ------------------------------------------------------
@@ -899,8 +906,9 @@ def build_gui():
             # Tab 1 — Auto Simulation
             # ===============================================================
             with gr.TabItem("⚡ Auto Simulation"):
+                agent = get_loaded_agent()
                 model_status = (
-                    f"🟢 RL Agent loaded: `{MODEL_PATH}` (PPO trained on TradeExecGym)" if _loaded_agent
+                    f"🟢 RL Agent loaded: `{MODEL_PATH}` (PPO trained on TradeExecGym)" if agent
                     else "⚡ Running Almgren-Chriss Heuristic Agent (mathematical optimal baseline)"
                 )
                 gr.Markdown(f"> {model_status}")
