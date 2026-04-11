@@ -928,13 +928,15 @@ def build_gui():
                 <span class="top-pill" style="background:rgba(99,102,241,0.1);color:#a5b4fc;border-color:rgba(99,102,241,0.3);">🧬 Recursive Update 2.0</span>
                 <span class="top-pill">🟢 OpenEnv &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp; Meta × HuggingFace Hackathon</span>
             </div>
+            
             <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:14px;position:relative;z-index:10;">
                 <span style="font-size:3.2rem;line-height:1;">📈</span>
                 <h1 style="font-size:3.4rem;margin:0;color:#f8fafc;font-weight:800;letter-spacing:-1.5px;font-family:'Inter',sans-serif;line-height:1;">
                     Trade<span style="color:#10b981;">Exec</span>Gym
                 </h1>
             </div>
-            <p style="color:#94a3b8;font-size:1.15rem;max-width:680px;margin:0 auto 8px auto;line-height:1.7;position:relative;z-index:10;font-weight:600;letter-spacing:0.3px;">
+            <br/>
+            <p style="color:#94a3b8;font-size:1.15rem;display:flex;align-items:center;justify-content:center;max-width:680px;margin:0 auto 8px auto;line-height:1.7;position:relative;z-index:10;font-weight:600;letter-spacing:0.3px;">
                 Wall Street's hardest problem. Now an AI playground.
             </p>
             <p style="color:#64748b;font-size:0.95rem;max-width:660px;margin:0 auto 30px auto;line-height:1.8;position:relative;z-index:10;">
