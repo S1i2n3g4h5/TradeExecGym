@@ -114,10 +114,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
-# env/  # Commented out - we have a source directory named 'env'
+# env/ is our source directory, do not ignore
+# ENV/ - remove this to avoid case-insensitive clash with env/
 venv/
-ENV/
-env.bak/
 venv.bak/
 
 # Environment local settings
